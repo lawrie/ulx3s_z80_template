@@ -1,6 +1,8 @@
 `default_nettype none
 module spectrum
 #(
+  parameter c_vga_out     = 0, // 0; Just HDMI, 1: VGA and HDMI
+  parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
 )
 (
   input         clk_25mhz,
@@ -28,29 +30,25 @@ module spectrum
   inout   [3:0] sd_d,
 
   inout  [27:0] gp,gn,
+  // SPI display
+  output        oled_csn,
+  output        oled_clk,
+  output        oled_mosi,
+  output        oled_dc,
+  output        oled_resn,
   // Leds
   output [7:0]  led
 );
 
-  // VGA (should be assigned to some gp/gn outputs
-  wire   [7:0]  red;
-  wire   [7:0]  green;
-  wire   [7:0]  blue;
-  wire          hsync;
-  wire          vsync;
-  
-  generate
-    genvar i;
-    for(i = 0; i < 4; i = i+1)
-    begin
-      assign gp[24-i-14] = red[i];
-      assign gn[17-i-14] = green[i];
-      assign gn[24-i-14] = blue[i];
-    end
-  endgenerate
-  assign gp[16-14] = vsync;
-  assign gp[17-14] = hsync;
+  // ===============================================================
+  // Ulx3s specific pins
+  // ===============================================================
+  assign wifi_rxd = ftdi_txd; // passthru to ESP32 micropython serial console
+  assign ftdi_rxd = wifi_txd;
 
+  // ===============================================================
+  // CPU registers
+  // ===============================================================
   wire          n_WR;
   wire          n_RD;
   wire          n_INT;
@@ -68,14 +66,8 @@ module spectrum
   wire          n_ramCS;
   wire          n_kbdCS;
   wire          n_joyCS;
+  wire [15:0]   pc;
   
-  reg [2:0]     cpu_clk_count;
-  wire          cpu_clk_enable;
-
-  // passthru to ESP32 micropython serial console
-  assign wifi_rxd = ftdi_txd;
-  assign ftdi_rxd = wifi_txd;
-
   // ===============================================================
   // System Clock generation
   // ===============================================================
@@ -102,18 +94,25 @@ module spectrum
   wire sdram_clk = clocks[3]; // phase shifted for chip
 
   // ===============================================================
-  // Joystick for OSD control and games
+  // CPU clock generation
   // ===============================================================
-  reg joypad2 = 0;
-  reg [6:0] R_btn_joy;
-  always @(posedge clk_cpu)
-    R_btn_joy <= btn;
+  reg [2:0]     cpu_clk_count;
+  wire          cpu_clk_enable;
+  
+  always @(posedge clk_cpu) begin
+    cpu_clk_count <= cpu_clk_count + 1;
+  end
+
+  assign cpu_clk_enable = cpu_clk_count[2]; // 3.5Mhz
 
   // ===============================================================
   // Reset generation
   // ===============================================================
   reg [15:0] pwr_up_reset_counter = 0;
   wire       pwr_up_reset_n = &pwr_up_reset_counter;
+  reg [7:0]  R_cpu_control;
+  wire       loading = R_cpu_control[1];
+  wire       n_hard_reset = pwr_up_reset_n & btn[0] & ~R_cpu_control[0];
 
   always @(posedge clk_cpu) begin
      if (!pwr_up_reset_n)
@@ -123,13 +122,6 @@ module spectrum
   // ===============================================================
   // CPU
   // ===============================================================
-  wire [15:0] pc;
-  
-  reg [7:0] R_cpu_control;
-  wire loading = R_cpu_control[1];
-
-  wire n_hard_reset = pwr_up_reset_n & btn[0] & ~R_cpu_control[0];
-
   tv80n cpu1 (
     .reset_n(n_hard_reset),
     .clk(cpu_clk_enable),
@@ -148,9 +140,15 @@ module spectrum
   );
 
   // ===============================================================
+  // Joystick for OSD control and games
+  // ===============================================================
+  reg [6:0] R_btn_joy;
+  always @(posedge clk_cpu)
+    R_btn_joy <= btn;
+
+  // ===============================================================
   // SPI Slave
   // ===============================================================
- 
   wire spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
   wire [7:0] spi_ram_di;
@@ -207,14 +205,30 @@ module spectrum
     .dout_b(vidOut)
   );
 
-  // pull-ups for us2 connector 
-  assign usb_fpga_pu_dp = 1;
-  assign usb_fpga_pu_dn = 1;
-
   // ===============================================================
-  // VGA
+  // Video
   // ===============================================================
-  wire vga_de;
+  
+  // VGA (should be assigned to some gp/gn outputs
+  wire   [7:0]  red;
+  wire   [7:0]  green;
+  wire   [7:0]  blue;
+  wire          hsync;
+  wire          vsync;
+  wire          vga_de;
+  
+  generate
+    genvar i;
+    if (c_vga_out) begin
+      for(i = 0; i < 4; i = i+1) begin
+        assign gp[10-i] = blue[4+i];
+        assign gn[3-i] = green[4+i];
+        assign gn[10-i] = red[4+i];
+      end
+      assign gp[2] = vsync;
+      assign gp[3] = hsync;
+    end
+  endgenerate
 
   video vga (
     .clk(clk_vga),
@@ -229,6 +243,7 @@ module spectrum
     .n_int(n_INT)
   );
 
+  // OSD
   wire [7:0] osd_vga_r, osd_vga_g, osd_vga_b;
   wire osd_vga_hsync, osd_vga_vsync, osd_vga_blank;
   spi_osd
@@ -291,17 +306,77 @@ module spectrum
   assign cpuDataIn =  ramOut;
 
   // ===============================================================
-  // CPU clock enable
+  // LCD diagnostics
   // ===============================================================
-  always @(posedge clk_cpu) begin
-    cpu_clk_count <= cpu_clk_count + 1;
-  end
+  generate
+  if(c_lcd_hex)
+  begin
+  // SPI DISPLAY
+  reg [127:0] R_display;
+  // HEX decoder does printf("%16X\n%16X\n", R_display[63:0], R_display[127:64]);
+  always @(posedge clk_cpu)
+    R_display = {pc};
 
-  assign cpu_clk_enable = cpu_clk_count[2]; // 3.5Mhz
+  parameter C_color_bits = 16;
+  wire [7:0] x;
+  wire [7:0] y;
+  wire [C_color_bits-1:0] color;
+  hex_decoder_v
+  #(
+    .c_data_len(128),
+    .c_row_bits(4),
+    .c_grid_6x8(1), // NOTE: TRELLIS needs -abc9 option to compile
+    .c_font_file("hex_font.mem"),
+    .c_color_bits(C_color_bits)
+  )
+  hex_decoder_v_inst
+  (
+    .clk(clk_hdmi),
+    .data(R_display),
+    .x(x[7:1]),
+    .y(y[7:1]),
+    .color(color)
+  );
+
+  // allow large combinatorial logic
+  // to calculate color(x,y)
+  wire next_pixel;
+  reg [C_color_bits-1:0] R_color;
+  always @(posedge clk_hdmi)
+    if(next_pixel)
+      R_color <= color;
+
+  wire w_oled_csn;
+  lcd_video
+  #(
+    .c_clk_mhz(125),
+    .c_init_file("st7789_linit_xflip.mem"),
+    .c_clk_phase(0),
+    .c_clk_polarity(1),
+    .c_init_size(38)
+  )
+  lcd_video_inst
+  (
+    .clk(clk_hdmi),
+    .reset(R_btn_joy[5]),
+    .x(x),
+    .y(y),
+    .next_pixel(next_pixel),
+    .color(R_color),
+    .spi_clk(oled_clk),
+    .spi_mosi(oled_mosi),
+    .spi_dc(oled_dc),
+    .spi_resn(oled_resn),
+    .spi_csn(w_oled_csn)
+  );
+  //assign oled_csn = w_oled_csn; // 8-pin ST7789: oled_csn is connected to CSn
+  assign oled_csn = 1; // 7-pin ST7789: oled_csn is connected to BLK (backlight enable pin)
+  end
+  endgenerate
 
   // ===============================================================
   // Leds
   // ===============================================================
-  assign led = {irq , !n_hard_reset, spi_ram_rd, spi_ram_wr};
+  assign led = {irq, !n_hard_reset, spi_ram_rd, spi_ram_wr};
   
 endmodule
