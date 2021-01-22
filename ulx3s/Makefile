@@ -1,4 +1,4 @@
-VERILOG = ../src/top.v ../src/dpram.v \
+VERILOG = ../src/top.v ../src/dpram.v ../src/acia.v \
 	  ../src/Z80/tv80_core.v ../src/Z80/tv80n.v ../src/Z80/tv80_mcode.v \
 	  ../src/Z80/tv80_reg.v ../src/Z80/tv80_alu.v \
           ../src/lattice/ecp5pll.sv \

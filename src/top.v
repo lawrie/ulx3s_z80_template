@@ -2,6 +2,8 @@
 module spectrum
 #(
   parameter c_vga_out     = 0, // 0; Just HDMI, 1: VGA and HDMI
+  parameter c_acia_serial = 1, // 0: disabled, 1: ACIA serial
+  parameter c_esp32_serial= 0, // 0: disabled, 1: ESP32 serial (micropython console)
   parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
 )
 (
@@ -41,12 +43,6 @@ module spectrum
 );
 
   // ===============================================================
-  // Ulx3s specific pins
-  // ===============================================================
-  assign wifi_rxd = ftdi_txd; // passthru to ESP32 micropython serial console
-  assign ftdi_rxd = wifi_txd;
-
-  // ===============================================================
   // CPU registers
   // ===============================================================
   wire          n_WR;
@@ -67,6 +63,9 @@ module spectrum
   wire          n_kbdCS;
   wire          n_joyCS;
   wire [15:0]   pc;
+  wire [7:0]    acia_dout;
+  wire          tctrl_cs = cpu_address[7:0] == 8'h80 && n_IORQ == 1'b0;
+  wire          tdata_cs = cpu_address[7:0] == 8'h81 && n_IORQ == 1'b0;
   
   // ===============================================================
   // System Clock generation
@@ -113,6 +112,7 @@ module spectrum
   reg [7:0]  r_cpu_control;
   wire       spi_load = r_cpu_control[1];
   wire       n_hard_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
+  wire       reset = !n_hard_reset;
 
   always @(posedge clk_cpu) begin
      if (!pwr_up_reset_n)
@@ -281,12 +281,68 @@ module spectrum
   );
 
   // ===============================================================
+  // ACIA
+  // ===============================================================
+  wire acia_txd, acia_rxd;
+  generate
+    if(c_acia_serial)
+    begin
+      assign acia_rxd = ftdi_txd;
+      assign ftdi_rxd = acia_txd;
+    end
+    else
+    begin
+      assign acia_rxd = 0;
+    end
+    if(c_esp32_serial)
+    begin
+      assign wifi_rxd = ftdi_txd;
+      assign ftdi_rxd = wifi_txd;
+    end
+  endgenerate
+
+  // ===============================================================
   // Audio
   // ===============================================================
   assign audio_l = 0;
   assign audio_r = audio_l;
 
   // ===============================================================
+  // 6850 ACIA (uart)
+  // ===============================================================
+
+  reg baudclk; // 16 * 9600 = 153600 = 25Mhz/162
+  reg [7:0] baudctr = 0;
+
+  generate
+    if(c_acia_serial) begin
+      always @(posedge clk_cpu) begin
+        baudctr <= baudctr + 1;
+        baudclk <= (baudctr > 80);
+        if(baudctr > 161) baudctr <= 0;
+      end
+
+      // 9600 8N1
+      ACIA acia(
+        .clk(clk_cpu),
+        .reset(reset),
+        .cs(tctrl_cs | tdata_cs),
+        .e_clk(1'b1),
+        .rw_n(n_ioWR),
+        .rs(tdata_cs),
+        .data_in(tctrl_cs ? 8'h01 : cpu_data_out[15:8]), // Set output when anything is written to tctrl
+        .data_out(acia_dout),
+        .txclk(baudclk),
+        .rxclk(baudclk),
+        .txdata(acia_txd),
+        .rxdata(acia_rxd),
+        .cts_n(1'b0),
+        .dcd_n(1'b0)
+      );
+    end
+  endgenerate
+
+// ===============================================================
   // MEMORY READ/WRITE LOGIC
   // ===============================================================
   assign n_ioWR = n_WR | n_IORQ;
