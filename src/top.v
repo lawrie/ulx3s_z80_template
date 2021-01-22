@@ -53,8 +53,8 @@ module spectrum
   wire          n_RD;
   wire          n_INT;
   wire [15:0]   cpu_address;
-  wire [7:0]    cpuDataOut;
-  wire [7:0]    cpuDataIn;
+  wire [7:0]    cpu_data_out;
+  wire [7:0]    cpu_data_in;
   wire          n_memWR;
   wire          n_memRD;
   wire          n_ioWR;
@@ -110,9 +110,9 @@ module spectrum
   // ===============================================================
   reg [15:0] pwr_up_reset_counter = 0;
   wire       pwr_up_reset_n = &pwr_up_reset_counter;
-  reg [7:0]  R_cpu_control;
-  wire       loading = R_cpu_control[1];
-  wire       n_hard_reset = pwr_up_reset_n & btn[0] & ~R_cpu_control[0];
+  reg [7:0]  r_cpu_control;
+  wire       spi_load = r_cpu_control[1];
+  wire       n_hard_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
 
   always @(posedge clk_cpu) begin
      if (!pwr_up_reset_n)
@@ -125,7 +125,7 @@ module spectrum
   tv80n cpu1 (
     .reset_n(n_hard_reset),
     .clk(cpu_clk_enable),
-    .wait_n(~loading),
+    .wait_n(~spi_load),
     .int_n(n_INT),
     .nmi_n(1'b1),
     .busrq_n(1'b1),
@@ -134,17 +134,17 @@ module spectrum
     .iorq_n(n_IORQ),
     .wr_n(n_WR),
     .A(cpu_address),
-    .di(cpuDataIn),
-    .do(cpuDataOut),
+    .di(cpu_data_in),
+    .do(cpu_data_out),
     .pc(pc)
   );
 
   // ===============================================================
   // Joystick for OSD control and games
   // ===============================================================
-  reg [6:0] R_btn_joy;
+  reg [6:0] r_btn_joy;
   always @(posedge clk_cpu)
-    R_btn_joy <= btn;
+    r_btn_joy <= btn;
 
   // ===============================================================
   // SPI Slave
@@ -152,8 +152,8 @@ module spectrum
   wire spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
   wire [7:0] spi_ram_di;
-  wire [7:0] ramOut;
-  wire [7:0] spi_ram_do = ramOut;
+  wire [7:0] ram_out;
+  wire [7:0] spi_ram_do = ram_out;
 
   assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
 
@@ -170,7 +170,7 @@ module spectrum
     .sclk(wifi_gpio16),
     .mosi(sd_d[1]), // wifi_gpio4
     .miso(sd_d[2]), // wifi_gpio12
-    .btn(R_btn_joy),
+    .btn(r_btn_joy),
     .irq(irq),
     .wr(spi_ram_wr),
     .rd(spi_ram_rd),
@@ -182,27 +182,27 @@ module spectrum
 
   always @(posedge clk_cpu) begin
     if (spi_ram_wr && spi_ram_addr[31:24] == 8'hFF) begin
-      R_cpu_control <= spi_ram_di;
+      r_cpu_control <= spi_ram_di;
     end
   end
 
   // ===============================================================
   // RAM
   // ===============================================================
-  wire [7:0] vidOut;
+  wire [7:0] vid_out;
   wire [12:0] vga_addr;
   wire [7:0] attrOut;
   wire [12:0] attr_addr;
 
   dpram ram48 (
     .clk_a(clk_cpu),
-    .we_a(loading ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ramCS & !n_memWR),
-    .addr_a(loading ? spi_ram_addr[15:0] : cpu_address),
-    .din_a(loading ? spi_ram_di : cpuDataOut),
-    .dout_a(ramOut),
+    .we_a(spi_load ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ramCS & !n_memWR),
+    .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
+    .din_a(spi_load ? spi_ram_di : cpu_data_out),
+    .dout_a(ram_out),
     .clk_b(clk_vga),
     .addr_b({3'b010, vga_addr}),
-    .dout_b(vidOut)
+    .dout_b(vid_out)
   );
 
   // ===============================================================
@@ -239,7 +239,7 @@ module spectrum
     .vga_hs(hsync),
     .vga_vs(vsync),
     .vga_addr(vga_addr),
-    .vga_data(vidOut),
+    .vga_data(vid_out),
     .n_int(n_INT)
   );
 
@@ -303,7 +303,7 @@ module spectrum
   // ===============================================================
   // Memory decoding
   // ===============================================================
-  assign cpuDataIn =  ramOut;
+  assign cpu_data_in =  ram_out;
 
   // ===============================================================
   // LCD diagnostics
@@ -312,27 +312,27 @@ module spectrum
   if(c_lcd_hex)
   begin
   // SPI DISPLAY
-  reg [127:0] R_display;
-  // HEX decoder does printf("%16X\n%16X\n", R_display[63:0], R_display[127:64]);
+  reg [127:0] r_display;
+  // HEX decoder does printf("%16X\n%16X\n", r_display[63:0], r_display[127:64]);
   always @(posedge clk_cpu)
-    R_display = {pc};
+    r_display = {pc};
 
-  parameter C_color_bits = 16;
+  parameter c_color_bits = 16;
   wire [7:0] x;
   wire [7:0] y;
-  wire [C_color_bits-1:0] color;
+  wire [c_color_bits-1:0] color;
   hex_decoder_v
   #(
     .c_data_len(128),
     .c_row_bits(4),
     .c_grid_6x8(1), // NOTE: TRELLIS needs -abc9 option to compile
     .c_font_file("hex_font.mem"),
-    .c_color_bits(C_color_bits)
+    .c_color_bits(c_color_bits)
   )
   hex_decoder_v_inst
   (
     .clk(clk_hdmi),
-    .data(R_display),
+    .data(r_display),
     .x(x[7:1]),
     .y(y[7:1]),
     .color(color)
@@ -341,10 +341,10 @@ module spectrum
   // allow large combinatorial logic
   // to calculate color(x,y)
   wire next_pixel;
-  reg [C_color_bits-1:0] R_color;
+  reg [c_color_bits-1:0] r_color;
   always @(posedge clk_hdmi)
     if(next_pixel)
-      R_color <= color;
+      r_color <= color;
 
   wire w_oled_csn;
   lcd_video
@@ -358,11 +358,11 @@ module spectrum
   lcd_video_inst
   (
     .clk(clk_hdmi),
-    .reset(R_btn_joy[5]),
+    .reset(r_btn_joy[5]),
     .x(x),
     .y(y),
     .next_pixel(next_pixel),
-    .color(R_color),
+    .color(r_color),
     .spi_clk(oled_clk),
     .spi_mosi(oled_mosi),
     .spi_dc(oled_dc),
