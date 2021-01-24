@@ -1,9 +1,10 @@
 `default_nettype none
-module spectrum
+module top
 #(
   parameter c_vga_out     = 0, // 0; Just HDMI, 1: VGA and HDMI
   parameter c_acia_serial = 1, // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial= 0, // 0: disabled, 1: ESP32 serial (micropython console)
+  parameter c_diag        = 1, // 0: No led diagnostcs, 1: led diagnostics 
   parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
 )
 (
@@ -194,7 +195,7 @@ module spectrum
   wire [7:0] attrOut;
   wire [12:0] attr_addr;
 
-  dpram ram48 (
+  dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
     .clk_a(clk_cpu),
     .we_a(spi_load ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ramCS & !n_memWR),
     .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
@@ -285,17 +286,13 @@ module spectrum
   // ===============================================================
   wire acia_txd, acia_rxd;
   generate
-    if(c_acia_serial)
-    begin
+    if(c_acia_serial) begin
       assign acia_rxd = ftdi_txd;
       assign ftdi_rxd = acia_txd;
-    end
-    else
-    begin
+    end else begin
       assign acia_rxd = 0;
     end
-    if(c_esp32_serial)
-    begin
+    if(c_esp32_serial) begin
       assign wifi_rxd = ftdi_txd;
       assign ftdi_rxd = wifi_txd;
     end
@@ -313,13 +310,18 @@ module spectrum
 
   reg baudclk; // 16 * 9600 = 153600 = 25Mhz/162
   reg [7:0] baudctr = 0;
+  reg [3:0] e_counter = 0;
+  reg e_clk;
 
   generate
     if(c_acia_serial) begin
       always @(posedge clk_cpu) begin
         baudctr <= baudctr + 1;
-        baudclk <= (baudctr > 80);
-        if(baudctr > 161) baudctr <= 0;
+        baudclk <= (baudctr > 20);
+        if(baudctr > 40) baudctr <= 0;
+        e_counter <= e_counter + 1;
+        if (e_counter == 9) e_counter <= 0;
+        e_clk <= (e_counter < 5);
       end
 
       // 9600 8N1
@@ -327,10 +329,12 @@ module spectrum
         .clk(clk_cpu),
         .reset(reset),
         .cs(tctrl_cs | tdata_cs),
-        .e_clk(1'b1),
+        .e_clk(cpu_clk_enable),
+        //.e_clk(e_clk),
         .rw_n(n_ioWR),
         .rs(tdata_cs),
-        .data_in(tctrl_cs ? 8'h01 : cpu_data_out[15:8]), // Set output when anything is written to tctrl
+        //.data_in(tctrl_cs ? 8'h01 : cpu_data_out), // Set output when anything is written to tctrl
+        .data_in(cpu_data_out),
         .data_out(acia_dout),
         .txclk(baudclk),
         .rxclk(baudclk),
@@ -359,7 +363,7 @@ module spectrum
   // ===============================================================
   // Memory decoding
   // ===============================================================
-  assign cpu_data_in =  ram_out;
+  assign cpu_data_in = tdata_cs && n_ioRD == 1'b0 ? acia_dout :  ram_out;
 
   // ===============================================================
   // LCD diagnostics
@@ -371,7 +375,7 @@ module spectrum
   reg [127:0] r_display;
   // HEX decoder does printf("%16X\n%16X\n", r_display[63:0], r_display[127:64]);
   always @(posedge clk_cpu)
-    r_display = {pc};
+    r_display = {cpu_data_in, cpu_data_out, cpu_address, pc};
 
   parameter c_color_bits = 16;
   wire [7:0] x;
@@ -430,9 +434,26 @@ module spectrum
   end
   endgenerate
 
+  // Led diagnostics
+  wire [15:0] diag16;
+
+  generate
+    genvar i;
+    if (c_diag) begin
+      for(i = 0; i < 4; i = i+1) begin
+        assign gn[17-i] = diag16[8+i];
+        assign gp[17-i] = diag16[12+i];
+        assign gn[24-i] = diag16[i];
+        assign gp[24-i] = diag16[4+i];
+      end
+    end
+  endgenerate
+
+  assign diag16 = {acia_dout, 5'b0, acia_txd, acia_rxd, baudclk};
+
   // ===============================================================
   // Leds
   // ===============================================================
-  assign led = {irq, !n_hard_reset, spi_ram_rd, spi_ram_wr};
+  assign led = {tdata_cs, tctrl_cs, irq, !n_hard_reset, spi_ram_rd, spi_ram_wr};
   
 endmodule
