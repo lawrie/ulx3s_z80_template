@@ -5,7 +5,7 @@ module top
   parameter c_acia_serial = 1, // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial= 0, // 0: disabled, 1: ESP32 serial (micropython console)
   parameter c_diag        = 1, // 0: No led diagnostcs, 1: led diagnostics 
-  parameter c_speed       = 12,// CPU speed = 25 / 2 ** (c_speed + 1) MHz
+  parameter c_speed       = 8, // CPU speed = 25 / 2 ** (c_speed + 1) MHz
   parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
 )
 (
@@ -50,9 +50,6 @@ module top
   wire          n_WR;
   wire          n_RD;
   wire          n_INT;
-  wire [15:0]   cpu_address;
-  wire [7:0]    cpu_data_out;
-  wire [7:0]    cpu_data_in;
   wire          n_memWR;
   wire          n_memRD;
   wire          n_ioWR;
@@ -62,10 +59,16 @@ module top
   wire          n_M1;
   wire          n_romCS;
   wire          n_ramCS;
+
+  wire [15:0]   cpu_address;
+  wire [7:0]    cpu_data_out;
+  wire [7:0]    cpu_data_in;
+  
   wire [15:0]   pc;
   wire [7:0]    acia_dout;
   wire          tdata_cs;
   wire          tctrl_cs;
+  reg [6:0]     r_btn_joy;
   
   // ===============================================================
   // System Clock generation
@@ -146,7 +149,7 @@ module top
   tv80n cpu1 (
     .reset_n(n_hard_reset),
     .clk(cpu_clk_enable),
-    .wait_n(~spi_load),
+    .wait_n(~spi_load & ~r_btn_joy[1]),
     .int_n(n_INT),
     .nmi_n(1'b1),
     .busrq_n(1'b1),
@@ -163,7 +166,6 @@ module top
   // ===============================================================
   // Joystick for OSD control and games
   // ===============================================================
-  reg [6:0] r_btn_joy;
   always @(posedge clk_cpu)
     r_btn_joy <= btn;
 
@@ -229,8 +231,6 @@ module top
   // ===============================================================
   // Video
   // ===============================================================
-  
-  // VGA (should be assigned to some gp/gn outputs
   wire   [7:0]  red;
   wire   [7:0]  green;
   wire   [7:0]  blue;
@@ -240,7 +240,7 @@ module top
   
   generate
     genvar i;
-    if (c_vga_out) begin
+    if (c_vga_out) begin // Optional assignment of pins for VGA Pmod
       for(i = 0; i < 4; i = i+1) begin
         assign gp[10-i] = blue[4+i];
         assign gn[3-i] = green[4+i];
@@ -264,7 +264,9 @@ module top
     .n_int(n_INT)
   );
 
+  // ===============================================================
   // OSD
+  // ===============================================================
   wire [7:0] osd_vga_r, osd_vga_g, osd_vga_b;
   wire osd_vga_hsync, osd_vga_vsync, osd_vga_blank;
   spi_osd
@@ -302,32 +304,31 @@ module top
   );
 
   // ===============================================================
-  // ACIA
-  // ===============================================================
-  wire acia_txd, acia_rxd;
-  generate
-    if(c_acia_serial) begin
-      assign acia_rxd = ftdi_txd;
-      assign ftdi_rxd = acia_txd;
-    end else begin
-      assign acia_rxd = 0;
-    end
-    if(c_esp32_serial) begin
-      assign wifi_rxd = ftdi_txd;
-      assign ftdi_rxd = wifi_txd;
-    end
-  endgenerate
-
-  // ===============================================================
   // Audio
   // ===============================================================
   assign audio_l = 0;
   assign audio_r = audio_l;
 
   // ===============================================================
+  // ACIA for serial terminal
+  // ===============================================================
+  wire acia_txd, acia_rxd;
+  generate
+    if(c_acia_serial) begin       // FTDI pins to host can be used by ACIA ...
+      assign acia_rxd = ftdi_txd;
+      assign ftdi_rxd = acia_txd;
+    end else begin
+      assign acia_rxd = 0;
+      if(c_esp32_serial) begin    // ... or for passthru to ESP32
+        assign wifi_rxd = ftdi_txd;
+        assign ftdi_rxd = wifi_txd;
+      end
+    end
+  endgenerate
+
+  // ===============================================================
   // 6850 ACIA (uart)
   // ===============================================================
-
   reg baudclk; // 16 * 9600 = 153600 = 25Mhz/162
   reg [7:0] baudctr = 0;
   reg [3:0] e_counter = 0;
@@ -340,8 +341,8 @@ module top
         baudclk <= (baudctr > 20);
         if(baudctr > 40) baudctr <= 0;
         e_counter <= e_counter + 1;
-        if (e_counter == 9) e_counter <= 0;
-        e_clk <= (e_counter < 5);
+        if (e_counter == 4) e_counter <= 0;
+        e_clk <= (e_counter < 2);
       end
 
       // 9600 8N1
@@ -349,8 +350,8 @@ module top
         .clk(clk_cpu),
         .reset(reset),
         .cs(tctrl_cs | tdata_cs),
-        //.e_clk(cpu_clk_enable),
-        .e_clk(e_clk),
+        .e_clk(cpu_clk_enable),
+        //.e_clk(e_clk),
         .rw_n(n_ioWR),
         .rs(tdata_cs),
         //.data_in(tctrl_cs ? 8'h01 : cpu_data_out), // Set output when anything is written to tctrl
