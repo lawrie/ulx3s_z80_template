@@ -141,7 +141,7 @@ module top
   // ===============================================================
   // Memory decoding
   // ===============================================================
-  assign cpu_data_in = tdata_cs && n_ioRD == 1'b0 ? acia_dout :  ram_out;
+  assign cpu_data_in = (tdata_cs || tctrl_cs) && n_ioRD == 1'b0 ? acia_dout :  ram_out;
 
   // ===============================================================
   // CPU
