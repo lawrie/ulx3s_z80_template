@@ -5,6 +5,7 @@ module top
   parameter c_acia_serial = 1, // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial= 0, // 0: disabled, 1: ESP32 serial (micropython console)
   parameter c_diag        = 1, // 0: No led diagnostcs, 1: led diagnostics 
+  parameter c_speed       = 12,// CPU speed = 25 / 2 ** (c_speed + 1) MHz
   parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
 )
 (
@@ -61,12 +62,10 @@ module top
   wire          n_M1;
   wire          n_romCS;
   wire          n_ramCS;
-  wire          n_kbdCS;
-  wire          n_joyCS;
   wire [15:0]   pc;
   wire [7:0]    acia_dout;
-  wire          tctrl_cs = cpu_address[7:0] == 8'h80 && n_IORQ == 1'b0;
-  wire          tdata_cs = cpu_address[7:0] == 8'h81 && n_IORQ == 1'b0;
+  wire          tdata_cs;
+  wire          tctrl_cs;
   
   // ===============================================================
   // System Clock generation
@@ -96,14 +95,14 @@ module top
   // ===============================================================
   // CPU clock generation
   // ===============================================================
-  reg [2:0]     cpu_clk_count;
-  wire          cpu_clk_enable;
+  reg [c_speed:0] cpu_clk_count;
+  wire            cpu_clk_enable;
   
   always @(posedge clk_cpu) begin
     cpu_clk_count <= cpu_clk_count + 1;
   end
 
-  assign cpu_clk_enable = cpu_clk_count[2]; // 3.5Mhz
+  assign cpu_clk_enable = cpu_clk_count[c_speed]; 
 
   // ===============================================================
   // Reset generation
@@ -119,6 +118,27 @@ module top
      if (!pwr_up_reset_n)
        pwr_up_reset_counter <= pwr_up_reset_counter + 1;
   end
+
+  // ===============================================================
+  // MEMORY READ/WRITE LOGIC
+  // ===============================================================
+  assign n_ioWR = n_WR | n_IORQ;
+  assign n_memWR = n_WR | n_MREQ;
+  assign n_ioRD = n_RD | n_IORQ;
+  assign n_memRD = n_RD | n_MREQ;
+
+  // ===============================================================
+  // Chip selects
+  // ===============================================================
+  assign n_romCS = cpu_address[15:14] != 0;
+  assign n_ramCS = !n_romCS;
+  assign tctrl_cs = cpu_address[7:0] == 8'h80 && n_IORQ == 1'b0;
+  assign tdata_cs = cpu_address[7:0] == 8'h81 && n_IORQ == 1'b0;
+
+  // ===============================================================
+  // Memory decoding
+  // ===============================================================
+  assign cpu_data_in = tdata_cs && n_ioRD == 1'b0 ? acia_dout :  ram_out;
 
   // ===============================================================
   // CPU
@@ -148,7 +168,7 @@ module top
     r_btn_joy <= btn;
 
   // ===============================================================
-  // SPI Slave
+  // SPI Slave from ESP32
   // ===============================================================
   wire spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
@@ -329,8 +349,8 @@ module top
         .clk(clk_cpu),
         .reset(reset),
         .cs(tctrl_cs | tdata_cs),
-        .e_clk(cpu_clk_enable),
-        //.e_clk(e_clk),
+        //.e_clk(cpu_clk_enable),
+        .e_clk(e_clk),
         .rw_n(n_ioWR),
         .rs(tdata_cs),
         //.data_in(tctrl_cs ? 8'h01 : cpu_data_out), // Set output when anything is written to tctrl
@@ -345,25 +365,6 @@ module top
       );
     end
   endgenerate
-
-// ===============================================================
-  // MEMORY READ/WRITE LOGIC
-  // ===============================================================
-  assign n_ioWR = n_WR | n_IORQ;
-  assign n_memWR = n_WR | n_MREQ;
-  assign n_ioRD = n_RD | n_IORQ;
-  assign n_memRD = n_RD | n_MREQ;
-
-  // ===============================================================
-  // Chip selects
-  // ===============================================================
-  assign n_romCS = cpu_address[15:14] != 0;
-  assign n_ramCS = !n_romCS;
-
-  // ===============================================================
-  // Memory decoding
-  // ===============================================================
-  assign cpu_data_in = tdata_cs && n_ioRD == 1'b0 ? acia_dout :  ram_out;
 
   // ===============================================================
   // LCD diagnostics
@@ -434,8 +435,10 @@ module top
   end
   endgenerate
 
+  // ===============================================================
   // Led diagnostics
-  wire [15:0] diag16;
+  // ===============================================================
+  reg [15:0] diag16;
 
   generate
     genvar i;
@@ -449,7 +452,7 @@ module top
     end
   endgenerate
 
-  assign diag16 = {acia_dout, 5'b0, acia_txd, acia_rxd, baudclk};
+  always @(posedge clk_cpu) if (n_ioWR == 1'b0 && cpu_address[7:0] == 8'h81) diag16 <= pc;
 
   // ===============================================================
   // Leds
