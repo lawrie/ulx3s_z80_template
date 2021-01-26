@@ -141,9 +141,7 @@ module top
   // ===============================================================
   // Memory decoding
   // ===============================================================
-  assign cpu_data_in = (tdata_cs && n_iord == 1'b0) ? acia_dout :  
-                       (tctrl_cs && n_iord == 1'b0) ? 8'h02 :
-                       ram_out;
+  assign cpu_data_in = (tdata_cs || tctrl_cs) && n_iord == 1'b0 ? acia_dout :  ram_out;
 
   // ===============================================================
   // CPU
@@ -460,7 +458,7 @@ module top
     end
   endgenerate
 
-  always @(posedge clk_cpu) diag16 <= 0;
+  always @(posedge clk_cpu) if (tdata_cs && n_iord == 1'b0) diag16 <= cpu_data_in;
 
   // ===============================================================
   // Leds

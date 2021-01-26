@@ -84,7 +84,8 @@ bootstrap:
 ;@---------------------------------------------------------------------
 getc:
 	push af
-waitch:     in a, ($80)
+waitch:     
+	in a, ($80)
 	bit 0, a
 	jr z, waitch
 	in a, ($81)
@@ -140,7 +141,7 @@ inp:
 
 
 ;@---------------------------------------------------------------------
-;@ inp
+;@ outp
 ;@
 ;@ writes register l to port h
 ;@
@@ -154,15 +155,19 @@ outp:
 	ret
 
 start:
-	;ld l,'H'
-	;call putc
 	ld hl, msg
 	call print_string
-	ld bc, $0FFF
-	call delay
-	;ld a, 'H'
-	;rst $08
-	jp start
+loop:
+	call getc		; Wait for a character
+	ld a, l
+	push af
+	rst $08			; print it
+	call newline		; print newline
+	pop af
+	cp 'r'
+	jp nz, loop
+	call print_regs
+	jr loop
 
 print_string:
         ld a, (hl)
@@ -179,7 +184,41 @@ delay:
 	ret z
 	jr delay
 
-disp_hex:
+print_regs:			; print AF BC DE HL IX IY in hex
+	push af
+	push iy
+	push ix
+	push hl
+	push de
+	push bc
+	push af
+	pop hl			; get AF
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop hl			; get BC
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop hl			; get DE
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop hl			; get HL
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop hl			; get IX
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop hl			; get IY
+	call print_hex
+	call newline
+	pop af
+	ret
+
+print_hex:			; print hl in hex
 	ld c, h
 	call out_hex
 	ld c, l
