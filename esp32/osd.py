@@ -19,7 +19,7 @@ import os
 import gc
 import ecp5
 
-class osdzx:
+class osd:
   def __init__(self):
     self.screen_x = const(64)
     self.screen_y = const(20)
@@ -34,7 +34,7 @@ class osdzx:
     self.spi_enable_osd = bytearray([0,0xFE,0,0,0,1])
     self.spi_write_osd = bytearray([0,0xFD,0,0,0])
     self.spi_channel = const(2)
-    self.spi_freq = const(4000000)
+    self.spi_freq = const(3000000)
     self.init_pinout_sd()
     #self.spi=SPI(self.spi_channel, baudrate=self.spi_freq, polarity=0, phase=0, bits=8, firstbit=SPI.MSB, sck=Pin(self.gpio_sck), mosi=Pin(self.gpio_mosi), miso=Pin(self.gpio_miso))
     self.init_spi()
@@ -112,7 +112,14 @@ class osdzx:
 
   def select_entry(self):
     if self.direntries[self.fb_cursor][1]: # is it directory
-      self.cwd = self.fullpath(self.direntries[self.fb_cursor][0])
+      oldselected = self.fb_selected - self.fb_topitem
+      self.fb_selected = self.fb_cursor
+      try:
+        self.cwd = self.fullpath(self.direntries[self.fb_cursor][0])
+      except:
+        self.fb_selected = -1
+      self.show_dir_line(oldselected)
+      self.show_dir_line(self.fb_cursor - self.fb_topitem)
       self.init_fb()
       self.read_dir()
       self.show_dir()
@@ -170,6 +177,41 @@ class osdzx:
         self.init_spi() # because of ecp5.prog() spi.deinit()
         self.spi_request.irq(trigger=Pin.IRQ_FALLING, handler=self.irq_handler_ref)
         self.irq_handler(0) # handle stuck IRQ
+      if filename.endswith(".nes") \
+      or filename.endswith(".col") \
+      or filename.endswith(".sg") \
+      or filename.endswith(".sms") \
+      or filename.endswith(".gg") \
+      or filename.endswith(".snes") \
+      or filename.endswith(".smc") \
+      or filename.endswith(".bin") \
+      or filename.endswith(".sfc"):
+        import ld_nes
+        s=ld_nes.ld_nes(self.spi,self.cs)
+        s.ctrl(1)
+        s.ctrl(0)
+        s.load_stream(open(filename,"rb"))
+        del s
+        gc.collect()
+        self.enable[0]=0
+        self.osd_enable(0)
+      if filename.startswith("/sd/ti99_4a/") and filename.endswith(".bin"):
+        import ld_ti99_4a
+        s=ld_ti99_4a.ld_ti99_4a(self.spi,self.cs)
+        s.load_rom_auto(open(filename,"rb"),filename)
+        del s
+        gc.collect()
+        self.enable[0]=0
+        self.osd_enable(0)
+      if (filename.startswith("/sd/msx") and filename.endswith(".rom")) \
+      or filename.endswith(".mx1"):
+        import ld_msx
+        s=ld_msx.ld_msx(self.spi,self.cs)
+        s.load_msx_rom(open(filename,"rb"))
+        del s
+        gc.collect()
+        self.enable[0]=0
+        self.osd_enable(0)
       if filename.endswith(".z80"):
         self.enable[0]=0
         self.osd_enable(0)
@@ -178,16 +220,46 @@ class osdzx:
         s.loadz80(filename)
         del s
         gc.collect()
-      if filename.endswith(".nes"):
-        import ld_zxspectrum
-        s=ld_zxspectrum.ld_zxspectrum(self.spi,self.cs)
-        s.ctrl(1)
-        s.ctrl(0)
-        s.load_stream(open(filename,"rb"),addr=0,maxlen=0x101000)
-        del s
-        gc.collect()
+      if filename.endswith(".ora") or filename.endswith(".orao"):
         self.enable[0]=0
         self.osd_enable(0)
+        import ld_orao
+        s=ld_orao.ld_orao(self.spi,self.cs)
+        s.loadorao(filename)
+        del s
+        gc.collect()
+      if filename.endswith(".vsf"):
+        self.enable[0]=0
+        self.osd_enable(0)
+        import ld_vic20
+        s=ld_vic20.ld_vic20(self.spi,self.cs)
+        s.loadvsf(filename)
+        del s
+        gc.collect()
+      if filename.endswith(".prg"):
+        self.enable[0]=0
+        self.osd_enable(0)
+        import ld_vic20
+        s=ld_vic20.ld_vic20(self.spi,self.cs)
+        s.loadprg(filename)
+        del s
+        gc.collect()
+      if filename.endswith(".cas"):
+        self.enable[0]=0
+        self.osd_enable(0)
+        import ld_trs80
+        s=ld_trs80.ld_trs80(self.spi,self.cs)
+        s.loadcas(filename)
+        del s
+        gc.collect()
+      if filename.endswith(".cmd"):
+        self.enable[0]=0
+        self.osd_enable(0)
+        import ld_trs80
+        s=ld_trs80.ld_trs80(self.spi,self.cs)
+        s.loadcmd(filename)
+        del s
+        gc.collect()
 
   @micropython.viper
   def osd_enable(self, en:int):
@@ -282,6 +354,7 @@ class osdzx:
         self.direntries.append([fname,1,0]) # directory
       else:
         self.direntries.append([fname,0,stat[6]]) # file
+      gc.collect()
 
   # NOTE: this can be used for debugging
   #def osd(self, a):
@@ -298,7 +371,11 @@ class osdzx:
   #    self.spi.write(bytearray(a)) # write content
   #    self.cs.off()
 
-os.mount(SDCard(slot=3),"/sd")
-ecp5.prog("/sd/zxspectrum/bitstreams/zxspectrum12f.bit")
+bitstream="/sd/sms/bitstreams/ulx3s_85f_sms.bit"
+try:
+  os.mount(SDCard(slot=3),"/sd")
+  ecp5.prog(bitstream)
+except:
+  print(bitstream+" file not found")
 gc.collect()
-spectrum=osdzx()
+run=osd()
