@@ -1,13 +1,14 @@
 `default_nettype none
 module top
 #(
-  parameter c_vga_out     = 0,  // 0; Just HDMI, 1: VGA and HDMI
-  parameter c_acia_serial = 1,  // 0: disabled, 1: ACIA serial
-  parameter c_esp32_serial= 0,  // 0: disabled, 1: ESP32 serial (micropython console)
-  parameter c_diag        = 1,  // 0: No led diagnostcs, 1: led diagnostics 
-  parameter c_speed       = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
-  parameter c_reset       = 15, // Bits (minus 1) in power-up reset counter
-  parameter c_lcd_hex     = 1   // SPI LCD HEX decoder
+  parameter c_vga_out      = 0,  // 0; Just HDMI, 1: VGA and HDMI
+  parameter c_acia_serial  = 1,  // 0: disabled, 1: ACIA serial
+  parameter c_esp32_serial = 0,  // 0: disabled, 1: ESP32 serial (micropython console)
+  parameter c_sdram        = 0,  // SDRAM or BRAM 
+  parameter c_diag         = 1,  // 0: No led diagnostcs, 1: led diagnostics 
+  parameter c_speed        = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
+  parameter c_reset        = 15, // Bits (minus 1) in power-up reset counter
+  parameter c_lcd_hex      = 1   // SPI LCD HEX decoder
 )
 (
   input         clk_25mhz,
@@ -33,6 +34,17 @@ module top
 
   inout  sd_clk, sd_cmd,
   inout   [3:0] sd_d,
+
+  output sdram_csn,       // chip select
+  output sdram_clk,       // clock to SDRAM
+  output sdram_cke,       // clock enable to SDRAM
+  output sdram_rasn,      // SDRAM RAS
+  output sdram_casn,      // SDRAM CAS
+  output sdram_wen,       // SDRAM write-enable
+  output [12:0] sdram_a,  // SDRAM address bus
+  output  [1:0] sdram_ba, // SDRAM bank-address
+  output  [1:0] sdram_dqm,// byte select
+  inout  [15:0] sdram_d,  // data bus to/from SDRAM
 
   inout  [27:0] gp,gn,
   // SPI display
@@ -140,8 +152,8 @@ module top
   // ===============================================================
   // Chip selects
   // ===============================================================
-  assign n_rom_cs = cpu_address[15:14] != 0;
-  assign n_ram_cs = !n_rom_cs;
+  assign n_rom_cs = 1'b1;
+  assign n_ram_cs = 1'b0;
   assign tctrl_cs = cpu_address[7:0] == 8'h80 && n_iorq == 1'b0;
   assign tdata_cs = cpu_address[7:0] == 8'h81 && n_iorq == 1'b0;
 
@@ -225,16 +237,56 @@ module top
   wire [7:0]  vid_out;
   wire [12:0] vga_addr;
 
-  dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
-    .clk_a(clk_cpu),
-    .we_a(spi_load ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ram_cs & !n_memwr),
-    .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
-    .din_a(spi_load ? spi_ram_di : cpu_data_out),
-    .dout_a(ram_out),
-    .clk_b(clk_vga),
-    .addr_b({3'b010, vga_addr}),
-    .dout_b(vid_out)
-  );
+  generate
+    if (c_sdram == 0) begin
+      dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
+        .clk_a(clk_cpu),
+        .we_a(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
+        .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
+        .din_a(spi_load ? spi_ram_di : cpu_data_out),
+        .dout_a(ram_out),
+        .clk_b(clk_vga),
+        .addr_b({3'b010, vga_addr}),
+        .dout_b(vid_out)
+      );
+    end else begin
+      wire sdram_d_wr;
+      wire [15:0] sdram_d_in, sdram_d_out;
+      wire [23:0] sdram_address = cpu_address;
+
+      assign sdram_d = sdram_d_wr ? sdram_d_out : 16'hzzzz;
+      assign sdram_d_in = sdram_d;
+
+      sdram sdram_i (
+       .sd_data_in(sdram_d_in),
+       .sd_data_out(sdram_d_out),
+       .sd_addr(sdram_a),
+       .sd_dqm(sdram_dqm),
+       .sd_cs(sdram_csn),
+       .sd_ba(sdram_ba),
+       .sd_we(sdram_wen),
+       .sd_ras(sdram_rasn),
+       .sd_cas(sdram_casn),
+       // system interface
+       .clk(clk_sdram),
+       .clkref(cpu_clk_enable),
+       .init(!clk_sdram_locked),
+       .we_out(sdram_d_wr),
+       // cpu/chipset interface
+       .weA(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
+       .addrA(sdram_address),
+       .oeA(cpu_clk_enable),
+       .dinA(cpu_data_out),
+       .doutA(ram_out),
+       // SPI interface
+       .weB(spi_ram_wr && spi_ram_addr[31:24] == 8'h00),
+       .addrB(spi_ram_addr[23:0]),
+       .dinB(spi_ram_di),
+       .oeB(0),
+       .doutB()
+      );
+    end
+  endgenerate
 
   // ===============================================================
   // Video
