@@ -165,8 +165,14 @@ loop:
 	call newline		; print newline
 	pop af
 	cp 'r'
-	jp nz, loop
+	jp nz, cont1
 	call print_regs
+cont1:
+	cp 'm'
+	jr nz, loop
+	ld hl, 0
+	ld bc, 16
+	call print_mem
 	jr loop
 
 print_string:
@@ -239,11 +245,45 @@ conv:
 	rst $08
 	ret
 
+print_hex8:			; print c in hex
+	ld a, c
+	rra
+	rra
+	rra
+	rra
+	call conv
+	ld a, c
+	call conv
+	ret
+
 newline:
 	ld a, 13
 	rst $08
 	ld a, 10
 	rst $08
+	ret
+
+print_mem:			; Print memory in hex from hl, bc bytes
+	push bc
+	call print_hex
+	ld a, ' '
+	rst $08
+	pop bc
+pmloop:
+	dec bc
+	ld a, b
+	or c
+	jr z, pmexit
+	push bc
+	ld c, (hl)
+	inc hl
+	call print_hex8
+	ld a, ' '
+	rst $08
+	pop bc
+	jr pmloop
+pmexit:
+	call newline
 	ret
 
 msg:
