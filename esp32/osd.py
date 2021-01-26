@@ -189,9 +189,10 @@ class osd:
       or filename.endswith(".sfc"):
         import ld_nes
         s=ld_nes.ld_nes(self.spi,self.cs)
-        s.ctrl(1)
-        s.ctrl(0)
+        s.ctrl(2)
         s.load_stream(open(filename,"rb"))
+	s.ctrl(1)
+	s.ctrl(0)
         del s
         gc.collect()
         self.enable[0]=0

@@ -122,7 +122,7 @@ module top
   reg [c_reset:0] pwr_up_reset_counter = 0;
   wire            pwr_up_reset_n = &pwr_up_reset_counter;
   wire            n_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
-  wire            reset = !n_reset;
+  wire            reset = ~n_reset;
 
   always @(posedge clk_cpu) begin
      if (!pwr_up_reset_n)
@@ -460,6 +460,6 @@ module top
   // ===============================================================
   // Leds
   // ===============================================================
-  assign led = {tdata_cs, tctrl_cs, irq, reset, spi_ram_rd, spi_ram_wr};
+  assign led = {tdata_cs, tctrl_cs, irq, reset, spi_ram_rd, spi_ram_wr, spi_load};
   
 endmodule
