@@ -169,10 +169,14 @@ loop:
 	call print_regs
 cont1:
 	cp 'm'
-	jr nz, loop
+	jr nz, cont2
 	ld hl, 0
 	ld bc, 16
 	call print_mem
+cont2:
+	cp '0'
+	jr nz, loop
+	jp 0
 	jr loop
 
 print_string:

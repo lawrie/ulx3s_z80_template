@@ -248,9 +248,9 @@ F00:0155       	ret
 F00:0156       
 F00:0157       start:
 F00:0158       	ld hl, msg
-               S01:0000007A:  21 2E 01
+               S01:0000007A:  21 35 01
 F00:0159       	call print_string
-               S01:0000007D:  CD A1 00
+               S01:0000007D:  CD A8 00
 F00:0160       loop:
 F00:0161       	call getc		; Wait for a character
                S01:00000080:  CD 51 00
@@ -261,7 +261,7 @@ F00:0163       	push af
 F00:0164       	rst $08			; print it
                S01:00000085:  CF
 F00:0165       	call newline		; print newline
-               S01:00000086:  CD 0A 01
+               S01:00000086:  CD 11 01
 F00:0166       	pop af
                S01:00000089:  F1
 F00:0167       	cp 'r'
@@ -269,233 +269,240 @@ F00:0167       	cp 'r'
 F00:0168       	jp nz, cont1
                S01:0000008C:  C2 92 00
 F00:0169       	call print_regs
-               S01:0000008F:  CD B0 00
+               S01:0000008F:  CD B7 00
 F00:0170       cont1:
 F00:0171       	cp 'm'
                S01:00000092:  FE 6D
-F00:0172       	jr nz, loop
-               S01:00000094:  20 EA
+F00:0172       	jr nz, cont2
+               S01:00000094:  20 09
 F00:0173       	ld hl, 0
                S01:00000096:  21 00 00
 F00:0174       	ld bc, 16
                S01:00000099:  01 10 00
 F00:0175       	call print_mem
-               S01:0000009C:  CD 11 01
-F00:0176       	jr loop
-               S01:0000009F:  18 DF
-F00:0177       
-F00:0178       print_string:
-F00:0179               ld a, (hl)
-               S01:000000A1:  7E
-F00:0180               cp 255
-               S01:000000A2:  FE FF
-F00:0181               ret z
-               S01:000000A4:  C8
-F00:0182               inc hl
-               S01:000000A5:  23
-F00:0183               rst $08
-               S01:000000A6:  CF
-F00:0184               jp print_string
-               S01:000000A7:  C3 A1 00
-F00:0185       
-F00:0186       delay:
-F00:0187       	dec bc
-               S01:000000AA:  0B
-F00:0188       	ld a, b
-               S01:000000AB:  78
-F00:0189       	or c
-               S01:000000AC:  B1
-F00:0190       	ret z
-               S01:000000AD:  C8
-F00:0191       	jr delay
-               S01:000000AE:  18 FA
-F00:0192       
-F00:0193       print_regs:			; print AF BC DE HL IX IY in hex
-F00:0194       	push af
-               S01:000000B0:  F5
-F00:0195       	push iy
-               S01:000000B1:  FD E5
-F00:0196       	push ix
-               S01:000000B3:  DD E5
-F00:0197       	push hl
-               S01:000000B5:  E5
-F00:0198       	push de
-               S01:000000B6:  D5
-F00:0199       	push bc
-               S01:000000B7:  C5
-F00:0200       	push af
-               S01:000000B8:  F5
-F00:0201       	pop hl			; get AF
-               S01:000000B9:  E1
-F00:0202       	call print_hex
-               S01:000000BA:  CD E5 00
-F00:0203       	ld a, ' '
-               S01:000000BD:  3E 20
-F00:0204       	rst $08
-               S01:000000BF:  CF
-F00:0205       	pop hl			; get BC
+               S01:0000009C:  CD 18 01
+F00:0176       cont2:
+F00:0177       	cp '0'
+               S01:0000009F:  FE 30
+F00:0178       	jr nz, loop
+               S01:000000A1:  20 DD
+F00:0179       	jp 0
+               S01:000000A3:  C3 00 00
+F00:0180       	jr loop
+               S01:000000A6:  18 D8
+F00:0181       
+F00:0182       print_string:
+F00:0183               ld a, (hl)
+               S01:000000A8:  7E
+F00:0184               cp 255
+               S01:000000A9:  FE FF
+F00:0185               ret z
+               S01:000000AB:  C8
+F00:0186               inc hl
+               S01:000000AC:  23
+F00:0187               rst $08
+               S01:000000AD:  CF
+F00:0188               jp print_string
+               S01:000000AE:  C3 A8 00
+F00:0189       
+F00:0190       delay:
+F00:0191       	dec bc
+               S01:000000B1:  0B
+F00:0192       	ld a, b
+               S01:000000B2:  78
+F00:0193       	or c
+               S01:000000B3:  B1
+F00:0194       	ret z
+               S01:000000B4:  C8
+F00:0195       	jr delay
+               S01:000000B5:  18 FA
+F00:0196       
+F00:0197       print_regs:			; print AF BC DE HL IX IY in hex
+F00:0198       	push af
+               S01:000000B7:  F5
+F00:0199       	push iy
+               S01:000000B8:  FD E5
+F00:0200       	push ix
+               S01:000000BA:  DD E5
+F00:0201       	push hl
+               S01:000000BC:  E5
+F00:0202       	push de
+               S01:000000BD:  D5
+F00:0203       	push bc
+               S01:000000BE:  C5
+F00:0204       	push af
+               S01:000000BF:  F5
+F00:0205       	pop hl			; get AF
                S01:000000C0:  E1
 F00:0206       	call print_hex
-               S01:000000C1:  CD E5 00
+               S01:000000C1:  CD EC 00
 F00:0207       	ld a, ' '
                S01:000000C4:  3E 20
 F00:0208       	rst $08
                S01:000000C6:  CF
-F00:0209       	pop hl			; get DE
+F00:0209       	pop hl			; get BC
                S01:000000C7:  E1
 F00:0210       	call print_hex
-               S01:000000C8:  CD E5 00
+               S01:000000C8:  CD EC 00
 F00:0211       	ld a, ' '
                S01:000000CB:  3E 20
 F00:0212       	rst $08
                S01:000000CD:  CF
-F00:0213       	pop hl			; get HL
+F00:0213       	pop hl			; get DE
                S01:000000CE:  E1
 F00:0214       	call print_hex
-               S01:000000CF:  CD E5 00
+               S01:000000CF:  CD EC 00
 F00:0215       	ld a, ' '
                S01:000000D2:  3E 20
 F00:0216       	rst $08
                S01:000000D4:  CF
-F00:0217       	pop hl			; get IX
+F00:0217       	pop hl			; get HL
                S01:000000D5:  E1
 F00:0218       	call print_hex
-               S01:000000D6:  CD E5 00
+               S01:000000D6:  CD EC 00
 F00:0219       	ld a, ' '
                S01:000000D9:  3E 20
 F00:0220       	rst $08
                S01:000000DB:  CF
-F00:0221       	pop hl			; get IY
+F00:0221       	pop hl			; get IX
                S01:000000DC:  E1
 F00:0222       	call print_hex
-               S01:000000DD:  CD E5 00
-F00:0223       	call newline
-               S01:000000E0:  CD 0A 01
-F00:0224       	pop af
-               S01:000000E3:  F1
-F00:0225       	ret
-               S01:000000E4:  C9
-F00:0226       
-F00:0227       print_hex:			; print hl in hex
-F00:0228       	ld c, h
-               S01:000000E5:  4C
-F00:0229       	call out_hex
-               S01:000000E6:  CD EA 00
-F00:0230       	ld c, l
-               S01:000000E9:  4D
-F00:0231       out_hex:
-F00:0232       	ld a, c
-               S01:000000EA:  79
-F00:0233       	rra
-               S01:000000EB:  1F
-F00:0234       	rra
-               S01:000000EC:  1F
-F00:0235       	rra
-               S01:000000ED:  1F
-F00:0236       	rra
-               S01:000000EE:  1F
-F00:0237       	call conv
-               S01:000000EF:  CD F3 00
-F00:0238       	ld a, c
-               S01:000000F2:  79
-F00:0239       conv:
-F00:0240       	and $0f
-               S01:000000F3:  E6 0F
-F00:0241       	add a, $90
-               S01:000000F5:  C6 90
-F00:0242       	daa
-               S01:000000F7:  27
-F00:0243       	adc a, $40
-               S01:000000F8:  CE 40
-F00:0244       	daa
-               S01:000000FA:  27
-F00:0245       	rst $08
-               S01:000000FB:  CF
-F00:0246       	ret
-               S01:000000FC:  C9
-F00:0247       
-F00:0248       print_hex8:			; print c in hex
-F00:0249       	ld a, c
-               S01:000000FD:  79
-F00:0250       	rra
-               S01:000000FE:  1F
-F00:0251       	rra
-               S01:000000FF:  1F
-F00:0252       	rra
-               S01:00000100:  1F
-F00:0253       	rra
-               S01:00000101:  1F
-F00:0254       	call conv
-               S01:00000102:  CD F3 00
-F00:0255       	ld a, c
-               S01:00000105:  79
-F00:0256       	call conv
-               S01:00000106:  CD F3 00
-F00:0257       	ret
-               S01:00000109:  C9
-F00:0258       
-F00:0259       newline:
-F00:0260       	ld a, 13
-               S01:0000010A:  3E 0D
-F00:0261       	rst $08
-               S01:0000010C:  CF
-F00:0262       	ld a, 10
-               S01:0000010D:  3E 0A
-F00:0263       	rst $08
-               S01:0000010F:  CF
-F00:0264       	ret
+               S01:000000DD:  CD EC 00
+F00:0223       	ld a, ' '
+               S01:000000E0:  3E 20
+F00:0224       	rst $08
+               S01:000000E2:  CF
+F00:0225       	pop hl			; get IY
+               S01:000000E3:  E1
+F00:0226       	call print_hex
+               S01:000000E4:  CD EC 00
+F00:0227       	call newline
+               S01:000000E7:  CD 11 01
+F00:0228       	pop af
+               S01:000000EA:  F1
+F00:0229       	ret
+               S01:000000EB:  C9
+F00:0230       
+F00:0231       print_hex:			; print hl in hex
+F00:0232       	ld c, h
+               S01:000000EC:  4C
+F00:0233       	call out_hex
+               S01:000000ED:  CD F1 00
+F00:0234       	ld c, l
+               S01:000000F0:  4D
+F00:0235       out_hex:
+F00:0236       	ld a, c
+               S01:000000F1:  79
+F00:0237       	rra
+               S01:000000F2:  1F
+F00:0238       	rra
+               S01:000000F3:  1F
+F00:0239       	rra
+               S01:000000F4:  1F
+F00:0240       	rra
+               S01:000000F5:  1F
+F00:0241       	call conv
+               S01:000000F6:  CD FA 00
+F00:0242       	ld a, c
+               S01:000000F9:  79
+F00:0243       conv:
+F00:0244       	and $0f
+               S01:000000FA:  E6 0F
+F00:0245       	add a, $90
+               S01:000000FC:  C6 90
+F00:0246       	daa
+               S01:000000FE:  27
+F00:0247       	adc a, $40
+               S01:000000FF:  CE 40
+F00:0248       	daa
+               S01:00000101:  27
+F00:0249       	rst $08
+               S01:00000102:  CF
+F00:0250       	ret
+               S01:00000103:  C9
+F00:0251       
+F00:0252       print_hex8:			; print c in hex
+F00:0253       	ld a, c
+               S01:00000104:  79
+F00:0254       	rra
+               S01:00000105:  1F
+F00:0255       	rra
+               S01:00000106:  1F
+F00:0256       	rra
+               S01:00000107:  1F
+F00:0257       	rra
+               S01:00000108:  1F
+F00:0258       	call conv
+               S01:00000109:  CD FA 00
+F00:0259       	ld a, c
+               S01:0000010C:  79
+F00:0260       	call conv
+               S01:0000010D:  CD FA 00
+F00:0261       	ret
                S01:00000110:  C9
-F00:0265       
-F00:0266       print_mem:			; Print memory in hex from hl, bc bytes
-F00:0267       	push bc
-               S01:00000111:  C5
-F00:0268       	call print_hex
-               S01:00000112:  CD E5 00
-F00:0269       	ld a, ' '
-               S01:00000115:  3E 20
-F00:0270       	rst $08
-               S01:00000117:  CF
-F00:0271       	pop bc
-               S01:00000118:  C1
-F00:0272       pmloop:
-F00:0273       	dec bc
-               S01:00000119:  0B
-F00:0274       	ld a, b
-               S01:0000011A:  78
-F00:0275       	or c
-               S01:0000011B:  B1
-F00:0276       	jr z, pmexit
-               S01:0000011C:  28 0C
-F00:0277       	push bc
-               S01:0000011E:  C5
-F00:0278       	ld c, (hl)
-               S01:0000011F:  4E
-F00:0279       	inc hl
-               S01:00000120:  23
-F00:0280       	call print_hex8
-               S01:00000121:  CD FD 00
-F00:0281       	ld a, ' '
-               S01:00000124:  3E 20
-F00:0282       	rst $08
-               S01:00000126:  CF
-F00:0283       	pop bc
-               S01:00000127:  C1
-F00:0284       	jr pmloop
-               S01:00000128:  18 EF
-F00:0285       pmexit:
-F00:0286       	call newline
-               S01:0000012A:  CD 0A 01
-F00:0287       	ret
-               S01:0000012D:  C9
-F00:0288       
-F00:0289       msg:
-F00:0290               db 'Z80 monitor', 13, 10, 255
-               S01:0000012E:  5A 38 30 20 6D 6F 6E 69 74 6F 72
-               S01:00000139:  0D
-               S01:0000013A:  0A
-               S01:0000013B:  FF
-F00:0291       
+F00:0262       
+F00:0263       newline:
+F00:0264       	ld a, 13
+               S01:00000111:  3E 0D
+F00:0265       	rst $08
+               S01:00000113:  CF
+F00:0266       	ld a, 10
+               S01:00000114:  3E 0A
+F00:0267       	rst $08
+               S01:00000116:  CF
+F00:0268       	ret
+               S01:00000117:  C9
+F00:0269       
+F00:0270       print_mem:			; Print memory in hex from hl, bc bytes
+F00:0271       	push bc
+               S01:00000118:  C5
+F00:0272       	call print_hex
+               S01:00000119:  CD EC 00
+F00:0273       	ld a, ' '
+               S01:0000011C:  3E 20
+F00:0274       	rst $08
+               S01:0000011E:  CF
+F00:0275       	pop bc
+               S01:0000011F:  C1
+F00:0276       pmloop:
+F00:0277       	dec bc
+               S01:00000120:  0B
+F00:0278       	ld a, b
+               S01:00000121:  78
+F00:0279       	or c
+               S01:00000122:  B1
+F00:0280       	jr z, pmexit
+               S01:00000123:  28 0C
+F00:0281       	push bc
+               S01:00000125:  C5
+F00:0282       	ld c, (hl)
+               S01:00000126:  4E
+F00:0283       	inc hl
+               S01:00000127:  23
+F00:0284       	call print_hex8
+               S01:00000128:  CD 04 01
+F00:0285       	ld a, ' '
+               S01:0000012B:  3E 20
+F00:0286       	rst $08
+               S01:0000012D:  CF
+F00:0287       	pop bc
+               S01:0000012E:  C1
+F00:0288       	jr pmloop
+               S01:0000012F:  18 EF
+F00:0289       pmexit:
+F00:0290       	call newline
+               S01:00000131:  CD 11 01
+F00:0291       	ret
+               S01:00000134:  C9
 F00:0292       
+F00:0293       msg:
+F00:0294               db 'Z80 monitor', 13, 10, 255
+               S01:00000135:  5A 38 30 20 6D 6F 6E 69 74 6F 72
+               S01:00000140:  0D
+               S01:00000141:  0A
+               S01:00000142:  FF
+F00:0295       
+F00:0296       
 
 
 Sections:
@@ -507,20 +514,21 @@ F00  boot.asm
 
 
 Symbols:
-pmexit EXPR(298=0x12a) ABS 
-pmloop EXPR(281=0x119) ABS 
-print_hex8 EXPR(253=0xfd) ABS 
-conv EXPR(243=0xf3) ABS 
-out_hex EXPR(234=0xea) ABS 
-print_hex EXPR(229=0xe5) ABS 
-delay EXPR(170=0xaa) ABS 
-print_mem EXPR(273=0x111) ABS 
-print_regs EXPR(176=0xb0) ABS 
+pmexit EXPR(305=0x131) ABS 
+pmloop EXPR(288=0x120) ABS 
+print_hex8 EXPR(260=0x104) ABS 
+conv EXPR(250=0xfa) ABS 
+out_hex EXPR(241=0xf1) ABS 
+print_hex EXPR(236=0xec) ABS 
+delay EXPR(177=0xb1) ABS 
+print_mem EXPR(280=0x118) ABS 
+cont2 EXPR(159=0x9f) ABS 
+print_regs EXPR(183=0xb7) ABS 
 cont1 EXPR(146=0x92) ABS 
-newline EXPR(266=0x10a) ABS 
+newline EXPR(273=0x111) ABS 
 loop EXPR(128=0x80) ABS 
-print_string EXPR(161=0xa1) ABS 
-msg EXPR(302=0x12e) ABS 
+print_string EXPR(168=0xa8) ABS 
+msg EXPR(309=0x135) ABS 
 outp EXPR(115=0x73) UNUSED ABS 
 inp EXPR(108=0x6c) UNUSED ABS 
 putc EXPR(95=0x5f) UNUSED ABS 
