@@ -1,12 +1,13 @@
 `default_nettype none
 module top
 #(
-  parameter c_vga_out     = 0, // 0; Just HDMI, 1: VGA and HDMI
-  parameter c_acia_serial = 1, // 0: disabled, 1: ACIA serial
-  parameter c_esp32_serial= 0, // 0: disabled, 1: ESP32 serial (micropython console)
-  parameter c_diag        = 1, // 0: No led diagnostcs, 1: led diagnostics 
-  parameter c_speed       = 8, // CPU speed = 25 / 2 ** (c_speed + 1) MHz
-  parameter c_lcd_hex     = 1  // SPI LCD HEX decoder
+  parameter c_vga_out     = 0,  // 0; Just HDMI, 1: VGA and HDMI
+  parameter c_acia_serial = 1,  // 0: disabled, 1: ACIA serial
+  parameter c_esp32_serial= 0,  // 0: disabled, 1: ESP32 serial (micropython console)
+  parameter c_diag        = 1,  // 0: No led diagnostcs, 1: led diagnostics 
+  parameter c_speed       = 8,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
+  parameter c_reset       = 15, // Bits (minus 1) in power-up reset counter
+  parameter c_lcd_hex     = 1   // SPI LCD HEX decoder
 )
 (
   input         clk_25mhz,
@@ -45,30 +46,39 @@ module top
 );
 
   // ===============================================================
-  // CPU registers
+  // CPU signals
   // ===============================================================
   wire          n_wr;
   wire          n_rd;
   wire          n_int;
+  wire          n_mreq;
+  wire          n_iorq;
+  wire          n_m1;
+  
+  // Buses
+  wire [15:0]   cpu_address;
+  wire [7:0]    cpu_data_out;
+  wire [7:0]    cpu_data_in;
+  wire [15:0]   pc;
+
+  // Derived signals
   wire          n_memwr;
   wire          n_memrd;
   wire          n_iowr;
   wire          n_iord;
-  wire          n_mreq;
-  wire          n_iorq;
-  wire          n_M1;
+  
+  // Chip selects
   wire          n_rom_cs;
   wire          n_ram_cs;
-
-  wire [15:0]   cpu_address;
-  wire [7:0]    cpu_data_out;
-  wire [7:0]    cpu_data_in;
   
-  wire [15:0]   pc;
-  wire [7:0]    acia_dout;
   wire          tdata_cs;
   wire          tctrl_cs;
+
+  // Miscellaneous signals
+  wire [7:0]    acia_dout;
   reg [6:0]     r_btn_joy;
+  reg [7:0]     r_cpu_control;
+  wire          spi_load = r_cpu_control[1];
   
   // ===============================================================
   // System Clock generation
@@ -99,23 +109,20 @@ module top
   // CPU clock generation
   // ===============================================================
   reg [c_speed:0] cpu_clk_count;
-  wire            cpu_clk_enable;
   
   always @(posedge clk_cpu) begin
     cpu_clk_count <= cpu_clk_count + 1;
   end
 
-  assign cpu_clk_enable = cpu_clk_count[c_speed]; 
+  wire cpu_clk_enable = cpu_clk_count[c_speed]; 
 
   // ===============================================================
   // Reset generation
   // ===============================================================
-  reg [15:0] pwr_up_reset_counter = 0;
-  wire       pwr_up_reset_n = &pwr_up_reset_counter;
-  reg [7:0]  r_cpu_control;
-  wire       spi_load = r_cpu_control[1];
-  wire       n_hard_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
-  wire       reset = !n_hard_reset;
+  reg [c_reset:0] pwr_up_reset_counter = 0;
+  wire            pwr_up_reset_n = &pwr_up_reset_counter;
+  wire            n_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
+  wire            reset = !n_reset;
 
   always @(posedge clk_cpu) begin
      if (!pwr_up_reset_n)
@@ -147,14 +154,14 @@ module top
   // CPU
   // ===============================================================
   tv80n cpu1 (
-    .reset_n(n_hard_reset),
+    .reset_n(n_reset),
     .clk(cpu_clk_enable),
     .wait_n(~spi_load & ~r_btn_joy[1]),
     .int_n(n_int),
     .nmi_n(1'b1),
     .busrq_n(1'b1),
     .mreq_n(n_mreq),
-    .m1_n(n_M1),
+    .m1_n(n_m1),
     .iorq_n(n_iorq),
     .wr_n(n_wr),
     .rd_n(n_rd),
@@ -167,32 +174,31 @@ module top
   // ===============================================================
   // Joystick for OSD control and games
   // ===============================================================
-  always @(posedge clk_cpu)
-    r_btn_joy <= btn;
+  always @(posedge clk_cpu) r_btn_joy <= btn;
 
-  // pull-ups for us2 connector 
-  assign usb_fpga_pu_dp = 1;
+  // ===============================================================
+  // Keyboard
+  // ===============================================================
+  assign usb_fpga_pu_dp = 1; // pull-ups for us2 connector
   assign usb_fpga_pu_dn = 1;
 
   // ===============================================================
   // SPI Slave from ESP32
   // ===============================================================
-  wire spi_ram_wr, spi_ram_rd;
+  wire        spi_ram_wr, spi_ram_rd;
   wire [31:0] spi_ram_addr;
-  wire [7:0] spi_ram_di;
-  wire [7:0] ram_out;
-  wire [7:0] spi_ram_do = ram_out;
+  wire [7:0]  spi_ram_di;
+  wire [7:0]  ram_out;
+  wire [7:0]  spi_ram_do = ram_out;
+  wire        irq;
 
   assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
+  assign wifi_gpio0 = ~irq;
 
-  wire irq;
-  spi_ram_btn
-  #(
+  spi_ram_btn #(
     .c_sclk_capable_pin(1'b0),
     .c_addr_bits(32)
-  )
-  spi_ram_btn_inst
-  (
+  ) spi_ram_btn_inst (
     .clk(clk_cpu),
     .csn(~wifi_gpio5),
     .sclk(wifi_gpio16),
@@ -206,7 +212,6 @@ module top
     .data_in(spi_ram_do),
     .data_out(spi_ram_di)
   );
-  assign wifi_gpio0 = ~irq;
 
   always @(posedge clk_cpu) begin
     if (spi_ram_wr && spi_ram_addr[31:24] == 8'hFF) begin
@@ -217,10 +222,8 @@ module top
   // ===============================================================
   // RAM
   // ===============================================================
-  wire [7:0] vid_out;
+  wire [7:0]  vid_out;
   wire [12:0] vga_addr;
-  wire [7:0] attrOut;
-  wire [12:0] attr_addr;
 
   dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
     .clk_a(clk_cpu),
@@ -274,16 +277,14 @@ module top
   // ===============================================================
   wire [7:0] osd_vga_r, osd_vga_g, osd_vga_b;
   wire osd_vga_hsync, osd_vga_vsync, osd_vga_blank;
-  spi_osd
-  #(
+
+  spi_osd #(
     .c_start_x(62), .c_start_y(80),
     .c_chars_x(64), .c_chars_y(20),
     .c_init_on(0),
     .c_char_file("osd.mem"),
     .c_font_file("font_bizcat8x16.mem")
-  )
-  spi_osd_inst
-  (
+  ) spi_osd_inst (
     .clk_pixel(clk_vga), .clk_pixel_ena(1),
     .i_r(red),
     .i_g(green),
@@ -318,6 +319,7 @@ module top
   // ACIA for serial terminal
   // ===============================================================
   wire acia_txd, acia_rxd;
+
   generate
     if(c_acia_serial) begin       // FTDI pins to host can be used by ACIA ...
       assign acia_rxd = ftdi_txd;
@@ -376,8 +378,7 @@ module top
   // LCD diagnostics
   // ===============================================================
   generate
-  if(c_lcd_hex)
-  begin
+  if(c_lcd_hex) begin
   // SPI DISPLAY
   reg [127:0] r_display;
   // HEX decoder does printf("%16X\n%16X\n", r_display[63:0], r_display[127:64]);
@@ -405,25 +406,20 @@ module top
     .color(color)
   );
 
-  // allow large combinatorial logic
-  // to calculate color(x,y)
   wire next_pixel;
   reg [c_color_bits-1:0] r_color;
-  always @(posedge clk_hdmi)
-    if(next_pixel)
-      r_color <= color;
-
   wire w_oled_csn;
-  lcd_video
-  #(
+
+  always @(posedge clk_hdmi)
+    if(next_pixel) r_color <= color;
+
+  lcd_video #(
     .c_clk_mhz(125),
     .c_init_file("st7789_linit_xflip.mem"),
     .c_clk_phase(0),
     .c_clk_polarity(1),
     .c_init_size(38)
-  )
-  lcd_video_inst
-  (
+  ) lcd_video_inst (
     .clk(clk_hdmi),
     .reset(r_btn_joy[5]),
     .x(x),
@@ -436,6 +432,7 @@ module top
     .spi_resn(oled_resn),
     .spi_csn(w_oled_csn)
   );
+
   //assign oled_csn = w_oled_csn; // 8-pin ST7789: oled_csn is connected to CSn
   assign oled_csn = 1; // 7-pin ST7789: oled_csn is connected to BLK (backlight enable pin)
   end
@@ -463,6 +460,6 @@ module top
   // ===============================================================
   // Leds
   // ===============================================================
-  assign led = {tdata_cs, tctrl_cs, irq, !n_hard_reset, spi_ram_rd, spi_ram_wr};
+  assign led = {tdata_cs, tctrl_cs, irq, reset, spi_ram_rd, spi_ram_wr};
   
 endmodule
