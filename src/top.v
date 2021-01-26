@@ -5,7 +5,7 @@ module top
   parameter c_acia_serial = 1,  // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial= 0,  // 0: disabled, 1: ESP32 serial (micropython console)
   parameter c_diag        = 1,  // 0: No led diagnostcs, 1: led diagnostics 
-  parameter c_speed       = 8,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
+  parameter c_speed       = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
   parameter c_reset       = 15, // Bits (minus 1) in power-up reset counter
   parameter c_lcd_hex     = 1   // SPI LCD HEX decoder
 )

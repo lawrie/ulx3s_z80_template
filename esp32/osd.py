@@ -185,6 +185,7 @@ class osd:
       or filename.endswith(".snes") \
       or filename.endswith(".smc") \
       or filename.endswith(".bin") \
+      or filename.endswith(".BIN") \
       or filename.endswith(".sfc"):
         import ld_nes
         s=ld_nes.ld_nes(self.spi,self.cs)
