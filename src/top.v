@@ -47,18 +47,18 @@ module top
   // ===============================================================
   // CPU registers
   // ===============================================================
-  wire          n_WR;
-  wire          n_RD;
-  wire          n_INT;
-  wire          n_memWR;
-  wire          n_memRD;
-  wire          n_ioWR;
-  wire          n_ioRD;
-  wire          n_MREQ;
-  wire          n_IORQ;
+  wire          n_wr;
+  wire          n_rd;
+  wire          n_int;
+  wire          n_memwr;
+  wire          n_memrd;
+  wire          n_iowr;
+  wire          n_iord;
+  wire          n_mreq;
+  wire          n_iorq;
   wire          n_M1;
-  wire          n_romCS;
-  wire          n_ramCS;
+  wire          n_rom_cs;
+  wire          n_ram_cs;
 
   wire [15:0]   cpu_address;
   wire [7:0]    cpu_data_out;
@@ -125,23 +125,25 @@ module top
   // ===============================================================
   // MEMORY READ/WRITE LOGIC
   // ===============================================================
-  assign n_ioWR = n_WR | n_IORQ;
-  assign n_memWR = n_WR | n_MREQ;
-  assign n_ioRD = n_RD | n_IORQ;
-  assign n_memRD = n_RD | n_MREQ;
+  assign n_iowr = n_wr | n_iorq;
+  assign n_memwr = n_wr | n_mreq;
+  assign n_iord = n_rd | n_iorq;
+  assign n_memrd = n_rd | n_mreq;
 
   // ===============================================================
   // Chip selects
   // ===============================================================
-  assign n_romCS = cpu_address[15:14] != 0;
-  assign n_ramCS = !n_romCS;
-  assign tctrl_cs = cpu_address[7:0] == 8'h80 && n_IORQ == 1'b0;
-  assign tdata_cs = cpu_address[7:0] == 8'h81 && n_IORQ == 1'b0;
+  assign n_rom_cs = cpu_address[15:14] != 0;
+  assign n_ram_cs = !n_rom_cs;
+  assign tctrl_cs = cpu_address[7:0] == 8'h80 && n_iorq == 1'b0;
+  assign tdata_cs = cpu_address[7:0] == 8'h81 && n_iorq == 1'b0;
 
   // ===============================================================
   // Memory decoding
   // ===============================================================
-  assign cpu_data_in = (tdata_cs || tctrl_cs) && n_ioRD == 1'b0 ? acia_dout :  ram_out;
+  assign cpu_data_in = (tdata_cs && n_iord == 1'b0) ? acia_dout :  
+                       (tctrl_cs && n_iord == 1'b0) ? 8'h02 :
+                       ram_out;
 
   // ===============================================================
   // CPU
@@ -150,13 +152,14 @@ module top
     .reset_n(n_hard_reset),
     .clk(cpu_clk_enable),
     .wait_n(~spi_load & ~r_btn_joy[1]),
-    .int_n(n_INT),
+    .int_n(n_int),
     .nmi_n(1'b1),
     .busrq_n(1'b1),
-    .mreq_n(n_MREQ),
+    .mreq_n(n_mreq),
     .m1_n(n_M1),
-    .iorq_n(n_IORQ),
-    .wr_n(n_WR),
+    .iorq_n(n_iorq),
+    .wr_n(n_wr),
+    .rd_n(n_rd),
     .A(cpu_address),
     .di(cpu_data_in),
     .do(cpu_data_out),
@@ -168,6 +171,10 @@ module top
   // ===============================================================
   always @(posedge clk_cpu)
     r_btn_joy <= btn;
+
+  // pull-ups for us2 connector 
+  assign usb_fpga_pu_dp = 1;
+  assign usb_fpga_pu_dn = 1;
 
   // ===============================================================
   // SPI Slave from ESP32
@@ -219,7 +226,7 @@ module top
 
   dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
     .clk_a(clk_cpu),
-    .we_a(spi_load ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ramCS & !n_memWR),
+    .we_a(spi_load ? spi_ram_wr  && spi_ram_addr[31:24] == 8'h00 : !n_ram_cs & !n_memwr),
     .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
     .din_a(spi_load ? spi_ram_di : cpu_data_out),
     .dout_a(ram_out),
@@ -261,7 +268,7 @@ module top
     .vga_vs(vsync),
     .vga_addr(vga_addr),
     .vga_data(vid_out),
-    .n_int(n_INT)
+    .n_int(n_int)
   );
 
   // ===============================================================
@@ -352,7 +359,7 @@ module top
         .cs(tctrl_cs | tdata_cs),
         .e_clk(cpu_clk_enable),
         //.e_clk(e_clk),
-        .rw_n(n_ioWR),
+        .rw_n(n_iowr),
         .rs(tdata_cs),
         //.data_in(tctrl_cs ? 8'h01 : cpu_data_out), // Set output when anything is written to tctrl
         .data_in(cpu_data_out),
@@ -453,7 +460,7 @@ module top
     end
   endgenerate
 
-  always @(posedge clk_cpu) if (n_ioWR == 1'b0 && cpu_address[7:0] == 8'h81) diag16 <= pc;
+  always @(posedge clk_cpu) diag16 <= 0;
 
   // ===============================================================
   // Leds

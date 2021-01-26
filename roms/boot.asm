@@ -55,9 +55,9 @@ RST18:	jp pollc
 RST38:	reti
 
 TX:	push af
-;txbusy:	in a,($80)	; read serial status
-;	bit 1,a		; check status bit 1
-;	jr z, txbusy	; loop if zero (serial is busy)
+txbusy:	in a,($80)	; read serial status
+	bit 1,a		; check status bit 1
+	jr z, txbusy	; loop if zero (serial is busy)
 	pop af
 	out ($81), a	; transmit the character
 	ret
@@ -178,6 +178,34 @@ delay:
 	or c
 	ret z
 	jr delay
+
+disp_hex:
+	ld c, h
+	call out_hex
+	ld c, l
+out_hex:
+	ld a, c
+	rra
+	rra
+	rra
+	rra
+	call conv
+	ld a, c
+conv:
+	and $0f
+	add a, $90
+	daa
+	adc a, $40
+	daa
+	rst $08
+	ret
+
+newline:
+	ld a, 13
+	rst $08
+	ld a, 10
+	rst $08
+	ret
 
 msg:
         db 'Z80 monitor', 13, 10, 255
