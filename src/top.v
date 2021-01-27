@@ -5,6 +5,7 @@ module top
   parameter c_acia_serial  = 1,  // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial = 0,  // 0: disabled, 1: ESP32 serial (micropython console)
   parameter c_sdram        = 0,  // SDRAM or BRAM 
+  parameter c_keyboard     = 0,  // Include keyboard support
   parameter c_diag         = 1,  // 0: No led diagnostcs, 1: led diagnostics 
   parameter c_speed        = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
   parameter c_reset        = 15, // Bits (minus 1) in power-up reset counter
@@ -18,6 +19,8 @@ module top
   output [3:0]  gpdi_dp,
   output [3:0]  gpdi_dn,
   // Keyboard
+  input         usb_fpga_bd_dp,
+  input         usb_fpga_bd_dn,
   output        usb_fpga_pu_dp,
   output        usb_fpga_pu_dn,
   // Audio
@@ -193,6 +196,20 @@ module top
   // ===============================================================
   assign usb_fpga_pu_dp = 1; // pull-ups for us2 connector
   assign usb_fpga_pu_dn = 1;
+
+  wire [10:0] ps2_key;
+
+  generate
+    if (c_keyboard) begin
+      // Get PS/2 keyboard events
+      ps2 ps2_kbd (
+       .clk(clk_cpu),
+       .ps2_clk(usb_fpga_bd_dp),
+       .ps2_data(usb_fpga_bd_dn),
+       .ps2_key(ps2_key)
+      );
+    end
+  endgenerate
 
   // ===============================================================
   // SPI Slave from ESP32
@@ -507,7 +524,7 @@ module top
     end
   endgenerate
 
-  always @(posedge clk_cpu) if (tdata_cs && n_iord == 1'b0) diag16 <= cpu_data_in;
+  always @(posedge clk_cpu) diag16 <= ps2_key;
 
   // ===============================================================
   // Leds
