@@ -106,3 +106,39 @@ USB game controllers can be added, where needed.
 ### Audio
 
 Audio is device-specific and can be added using extra audio Verilog modules.
+
+## Installation
+
+To build, you need a recent version of yosys, nextpnr-ecp5, project trellis and fujprog.
+
+After cloning the repository, do:
+
+```
+cd ulx3s
+make prog
+```
+
+## Running
+
+By default, the roms/boot.asm monitor runs.
+
+You can connect to this by
+
+```
+screen /dev/ttyUSB0 9600
+```
+
+or use any other terminal emulator.
+
+You can also run software compatiblle with the RC2014, such as roms/R0000009.BIN.
+
+To run this upload osd/osd.py, osd/ld_nes.py, and roms/R0000009.BIN to the esp32 and in web repl do:
+
+```
+import osd
+```
+
+You can then start the OSD by pressing all 4 direction buttons, select the R0000009.BIN file by navigating with the up and down buttons, and selecting with the right button.
+
+This will upload R0000009.BIN and you should see Microsoft Basic start. You can run Basic programs using the uart.
+
