@@ -1,6 +1,5 @@
 `default_nettype none
-module top
-#(
+module top #(
   parameter c_vga_out      = 0,  // 0; Just HDMI, 1: VGA and HDMI
   parameter c_acia_serial  = 1,  // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial = 0,  // 0: disabled, 1: ESP32 serial (micropython console)
@@ -10,8 +9,7 @@ module top
   parameter c_speed        = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
   parameter c_reset        = 15, // Bits (minus 1) in power-up reset counter
   parameter c_lcd_hex      = 1   // SPI LCD HEX decoder
-)
-(
+) (
   input         clk_25mhz,
   // Buttons
   input [6:0]   btn,
