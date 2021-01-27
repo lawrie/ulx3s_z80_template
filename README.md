@@ -142,3 +142,40 @@ You can then start the OSD by pressing all 4 direction buttons, select the R0000
 
 This will upload R0000009.BIN and you should see Microsoft Basic start. You can run Basic programs using the uart.
 
+## Directory structure
+
+There are 4 top-level directories: src, esp32, roms and ulx3s.
+
+### src directory
+
+The src directory contains all the Verilog source including the top-level file: top.v.
+
+There are then subdirectories for all the components:
+
+* video for VGA and HDMI output
+* uart for the ACIA uart
+* keyboard for the ps/2 keyboard module
+* memory for BRAM and SDRAM components
+* lattice for Lattice ECP5 specific code, which implements the PLL
+* Z80 for the TV80 CPU
+* spi_display for the LCD hex diagnostics
+* osd for the OSD
+
+### esp32 directory
+
+The esp32 directory contains micropython code that controls the OSD and needs to be uploaded to the ESP32.
+
+### roms directory
+
+The roms directory contains roms that can be uploaded to the ESP32 and run, such as R0000009.BIN.
+
+It also contains what you need to build your own rom using Z80 assembler.
+
+The example rom is called boot.asm. It is compiled with vasmz80_oldstyle, which you should move to somewhere on the PATH, such as /usr/local/bin.
+
+You can then build boot.bin and boot.hex from boot.asm, using build.sh.
+
+### ulx3s directory
+
+The ulx3s directory contains the Makefile for building a Ulx3s ECP5 bitstream, and includes ulx3s.mk used by the Makefile and the lpf file that defines the pin settings.
+
