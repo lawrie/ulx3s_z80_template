@@ -96,7 +96,7 @@ Next comes the module ports using the standard Ulx3s ulx3s_v20.lpf pin definitio
 
 Then the signals used by the CPU are declared:
 
-```
+```verilog
   // ===============================================================
   // CPU signals
   // ===============================================================
@@ -189,5 +189,532 @@ The speed of the cpu clock is then set, using a clock enable signal.
 ```
 
 ## Reset generation
+
+```verilog
+  // ===============================================================
+  // Reset generation
+  // ===============================================================
+  reg [c_reset:0] pwr_up_reset_counter = 0;
+  wire            pwr_up_reset_n = &pwr_up_reset_counter;
+  wire            n_reset = pwr_up_reset_n & btn[0] & ~r_cpu_control[0];
+  wire            reset = ~n_reset;
+
+  always @(posedge clk_cpu) begin
+     if (!pwr_up_reset_n)
+       pwr_up_reset_counter <= pwr_up_reset_counter + 1;
+  end
+```
+
+## Chip selects
+
+Chip selects will be specific to the Z80 computer or console being emulated.
+
+The defaults are those used by the RC2014 computer and include ports 80 and 81 for the ACIA uart.
+
+```verilog
+  // ===============================================================
+  // Chip selects
+  // ===============================================================
+  assign n_rom_cs = 1'b1;
+  assign n_ram_cs = 1'b0;
+  assign tctrl_cs = cpu_address[7:0] == 8'h80 && n_iorq == 1'b0;
+  assign tdata_cs = cpu_address[7:0] == 8'h81 && n_iorq == 1'b0;
+```
+
+## Memory decoding
+
+Next comes the multiplexer for the cpu input, which again will be specific to the device emulated.
+
+The default supports just RAM and uart input.
+
+```verilog
+  // ===============================================================
+  // Memory decoding
+  // ===============================================================
+  assign cpu_data_in = (tdata_cs || tctrl_cs) && n_iord == 1'b0 ? acia_dout :  ram_out;
+```
+
+## CPU
+
+Next is the instantiation of the TV80 CPU, with default parameters:
+
+```verilog
+  // ===============================================================
+  // CPU
+  // ===============================================================
+  tv80n cpu1 (
+    .reset_n(n_reset),
+    .clk(cpu_clk_enable),
+    .wait_n(~spi_load & ~r_btn_joy[1]),
+    .int_n(n_int),
+    .nmi_n(1'b1),
+    .busrq_n(1'b1),
+    .mreq_n(n_mreq),
+    .m1_n(n_m1),
+    .iorq_n(n_iorq),
+    .wr_n(n_wr),
+    .rd_n(n_rd),
+    .A(cpu_address),
+    .di(cpu_data_in),
+    .do(cpu_data_out),
+    .pc(pc)
+  );
+```
+
+Note that the CPU can be halted when SPI from the ESP32 is loading data into the RAM or ROM, or when button 1 is prwssed.
+
+## Buttons and joystick
+
+Next the buttons are registered to get more stable signals from them.
+
+The buttons are used to control the OSD and to emulate a joypad for some devices.
+
+Note that button 0 is the reset button, and button 1 can be used to halt the CPU, which is useful when
+looking at LCD hex diagnostics.
+
+```verilog
+  // ===============================================================
+  // Joystick for OSD control and games
+  // ===============================================================
+  always @(posedge clk_cpu) r_btn_joy <= btn;
+```
+
+## Keyboard
+
+Next comes the optional PS/2 keyboard support.
+
+An 11-bit ps2_key signal is returned to indicate which key is pressed using PS/2 scancodes.
+
+This is roughly compatible with the Mister implementation although bit 10 is different. (On Mister, it 
+toggles when a key is pressed. This implementation set bit 10 when a key is prsssed, simplifying processing).
+
+A keyboard decode from scan codes to the signals required by the specific device will be needed.
+
+```verilog
+  // ===============================================================
+  // Keyboard
+  // ===============================================================
+  assign usb_fpga_pu_dp = 1; // pull-ups for us2 connector
+  assign usb_fpga_pu_dn = 1;
+
+  wire [10:0] ps2_key;
+
+  generate
+    if (c_keyboard) begin
+      // Get PS/2 keyboard events
+      ps2 ps2_kbd (
+       .clk(clk_cpu),
+       .ps2_clk(usb_fpga_bd_dp),
+       .ps2_data(usb_fpga_bd_dn),
+       .ps2_key(ps2_key)
+      );
+    end
+  endgenerate
+```
+
+## SPI slave
+
+Then comes the SPI slave, which is used by the OSD and to load memory from files accessed via the ESP32.
+
+```verilog
+  // ===============================================================
+  // SPI Slave from ESP32
+  // ===============================================================
+  wire        spi_ram_wr, spi_ram_rd;
+  wire [31:0] spi_ram_addr;
+  wire [7:0]  spi_ram_di;
+  wire [7:0]  ram_out;
+  wire [7:0]  spi_ram_do = ram_out;
+  wire        irq;
+
+  assign sd_d[3] = 1'bz; // FPGA pin pullup sets SD card inactive at SPI bus
+  assign wifi_gpio0 = ~irq;
+
+  spi_ram_btn #(
+    .c_sclk_capable_pin(1'b0),
+    .c_addr_bits(32)
+  ) spi_ram_btn_inst (
+    .clk(clk_cpu),
+    .csn(~wifi_gpio5),
+    .sclk(wifi_gpio16),
+    .mosi(sd_d[1]), // wifi_gpio4
+    .miso(sd_d[2]), // wifi_gpio12
+    .btn(r_btn_joy),
+    .irq(irq),
+    .wr(spi_ram_wr),
+    .rd(spi_ram_rd),
+    .addr(spi_ram_addr),
+    .data_in(spi_ram_do),
+    .data_out(spi_ram_di)
+  );
+
+  always @(posedge clk_cpu) begin
+    if (spi_ram_wr && spi_ram_addr[31:24] == 8'hFF) begin
+      r_cpu_control <= spi_ram_di;
+    end
+  end
+```
+
+## RAM
+
+Then the RAM is declared. Either BRAM or SDRAM can be used.
+
+RAM usage will be specic to the device emulated. The default is 64KB or BRAM, with an extra read port for video output.
+
+```verilog
+  // ===============================================================
+  // RAM
+  // ===============================================================
+  wire [7:0]  vid_out;
+  wire [12:0] vga_addr;
+
+  generate
+    if (c_sdram == 0) begin
+      dpram #(
+        .MEM_INIT_FILE("../roms/boot.mem"),
+        .DATA_WIDTH(8),
+        .DEPTH(64 * 1024)
+      ) ram64 (
+        .clk_a(clk_cpu),
+        .we_a(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
+        .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),
+        .din_a(spi_load ? spi_ram_di : cpu_data_out),
+        .dout_a(ram_out),
+        .clk_b(clk_vga),
+        .addr_b({3'b010, vga_addr}),
+        .dout_b(vid_out)
+      );
+    end else begin
+      wire sdram_d_wr;
+      wire [15:0] sdram_d_in, sdram_d_out;
+      wire [23:0] sdram_address = {8'b0, cpu_address};
+
+      assign sdram_d = sdram_d_wr ? sdram_d_out : 16'hzzzz;
+      assign sdram_d_in = sdram_d;
+
+      sdram sdram_i (
+       .sd_data_in(sdram_d_in),
+       .sd_data_out(sdram_d_out),
+       .sd_addr(sdram_a),
+       .sd_dqm(sdram_dqm),
+       .sd_cs(sdram_csn),
+       .sd_ba(sdram_ba),
+       .sd_we(sdram_wen),
+       .sd_ras(sdram_rasn),
+       .sd_cas(sdram_casn),
+       // system interface
+       .clk(clk_sdram),
+       .clkref(cpu_clk_enable),
+       .init(!clk_sdram_locked),
+       .we_out(sdram_d_wr),
+       // cpu/chipset interface
+       .weA(spi_load ? 1'b0 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
+       .addrA(sdram_address),
+       .oeA(cpu_clk_enable),
+       .dinA(cpu_data_out),
+       .doutA(ram_out),
+       // SPI interface
+       .weB(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : 1'b0),
+       .addrB(spi_ram_addr[23:0]),
+       .dinB(spi_ram_di),
+       .oeB(0),
+       .doutB()
+      );
+    end
+  endgenerate
+```
+
+## Video
+
+The VGA video signal is then generated.
+
+By default there is a blank screen, which the OSD can overlay.
+
+```verilog
+  // ===============================================================
+  // Video
+  // ===============================================================
+  wire   [7:0]  red;
+  wire   [7:0]  green;
+  wire   [7:0]  blue;
+  wire          hsync;
+  wire          vsync;
+  wire          vga_de;
+
+  generate
+    genvar i;
+    if (c_vga_out) begin // Optional assignment of pins for VGA Pmod
+      for(i = 0; i < 4; i = i+1) begin
+        assign gp[10-i] = blue[4+i];
+        assign gn[3-i] = green[4+i];
+        assign gn[10-i] = red[4+i];
+      end
+      assign gp[2] = vsync;
+      assign gp[3] = hsync;
+    end
+  endgenerate
+
+  video vga (
+    .clk(clk_vga),
+    .vga_r(red),
+    .vga_g(green),
+    .vga_b(blue),
+    .vga_de(vga_de),
+    .vga_hs(hsync),
+    .vga_vs(vsync),
+    .vga_addr(vga_addr),
+    .vga_data(vid_out),
+    .n_int(n_int)
+  );
+```
+
+VGA utput via a Digilent Pmod is optional, but the VGA signal is always generated, so that it can be used for HDMI output.
+
+## OSD
+
+The On-screen display is then instantiated:
+
+```verilog
+  // ===============================================================
+  // OSD
+  // ===============================================================
+  wire [7:0] osd_vga_r, osd_vga_g, osd_vga_b;
+  wire osd_vga_hsync, osd_vga_vsync, osd_vga_blank;
+
+  spi_osd #(
+    .c_start_x(62), .c_start_y(80),
+    .c_chars_x(64), .c_chars_y(20),
+    .c_init_on(0),
+    .c_char_file("osd.mem"),
+    .c_font_file("font_bizcat8x16.mem")
+  ) spi_osd_inst (
+    .clk_pixel(clk_vga), .clk_pixel_ena(1),
+    .i_r(red),
+    .i_g(green),
+    .i_b(blue),
+    .i_hsync(~hsync), .i_vsync(~vsync), .i_blank(~vga_de),
+    .i_csn(~wifi_gpio5), .i_sclk(wifi_gpio16), .i_mosi(sd_d[1]), // .o_miso(),
+    .o_r(osd_vga_r), .o_g(osd_vga_g), .o_b(osd_vga_b),
+    .o_hsync(osd_vga_hsync), .o_vsync(osd_vga_vsync), .o_blank(osd_vga_blank)
+  );
+```
+
+## HDMI output
+
+The VGA signal is then converted to HDMI with a TMDS encoder:
+
+```verilog
+  // ===============================================================
+  // Convert VGA to HDMI
+  // ===============================================================
+  HDMI_out vga2dvid (
+    .pixclk(clk_vga),
+    .pixclk_x5(clk_hdmi),
+    .red(osd_vga_r),
+    .green(osd_vga_g),
+    .blue(osd_vga_b),
+    .vde(~osd_vga_blank),
+    .hSync(osd_vga_hsync),
+    .vSync(osd_vga_vsync),
+    .gpdi_dp(gpdi_dp),
+    .gpdi_dn(gpdi_dn)
+  );
+```
+
+## Audio
+
+Audio is device-specific and there is none by default:
+
+```verilog
+  // ===============================================================
+  // Audio
+  // ===============================================================
+  assign audio_l = 0;
+  assign audio_r = audio_l;
+```
+
+## ACIA uart
+
+Then comes the option Motorola 6850 ACIA uart:
+
+```verilog
+  // ===============================================================
+  // ACIA for serial terminal
+  // ===============================================================
+  wire acia_txd, acia_rxd;
+
+  generate
+    if(c_acia_serial) begin       // FTDI pins to host can be used by ACIA ...
+      assign acia_rxd = ftdi_txd;
+      assign ftdi_rxd = acia_txd;
+    end else begin
+      assign acia_rxd = 0;
+      if(c_esp32_serial) begin    // ... or for passthru to ESP32
+        assign wifi_rxd = ftdi_txd;
+        assign ftdi_rxd = wifi_txd;
+      end
+    end
+  endgenerate
+
+  // 6850 ACIA (uart)
+  reg baudclk; // 16 * 9600 = 153600 = 25Mhz/162
+  reg [7:0] baudctr = 0;
+  reg [3:0] e_counter = 0;
+  reg e_clk;
+
+  generate
+    if(c_acia_serial) begin
+      always @(posedge clk_cpu) begin
+        baudctr <= baudctr + 1;
+        baudclk <= (baudctr > 20);
+        if(baudctr > 40) baudctr <= 0;
+        e_counter <= e_counter + 1;
+        if (e_counter == 4) e_counter <= 0;
+        e_clk <= (e_counter < 2);
+      end
+
+      // 9600 8N1
+      ACIA acia(
+        .clk(clk_cpu),
+        .reset(reset),
+        .cs(tctrl_cs | tdata_cs),
+        .e_clk(cpu_clk_enable),
+        //.e_clk(e_clk),
+        .rw_n(n_iowr),
+        .rs(tdata_cs),
+        //.data_in(tctrl_cs ? 8'h01 : cpu_data_out), // Set output when anything is written to tctrl
+        .data_in(cpu_data_out),
+        .data_out(acia_dout),
+        .txclk(baudclk),
+        .rxclk(baudclk),
+        .txdata(acia_txd),
+        .rxdata(acia_rxd),
+        .cts_n(1'b0),
+        .dcd_n(1'b0)
+      );
+    end
+  endgenerate
+```
+
+## LCD hex diagnostics
+
+And then the optional hex diagnostics on an ST7789 display:
+
+```verilog
+  // ===============================================================
+  // LCD diagnostics
+  // ===============================================================
+  generate
+  if(c_lcd_hex) begin
+  // SPI DISPLAY
+  reg [127:0] r_display;
+  // HEX decoder does printf("%16X\n%16X\n", r_display[63:0], r_display[127:64]);
+  always @(posedge clk_cpu)
+    r_display = {cpu_data_in, cpu_data_out, cpu_address, pc};
+
+  parameter c_color_bits = 16;
+  wire [7:0] x;
+  wire [7:0] y;
+  wire [c_color_bits-1:0] color;
+  hex_decoder_v
+  #(
+    .c_data_len(128),
+    .c_row_bits(4),
+    .c_grid_6x8(1), // NOTE: TRELLIS needs -abc9 option to compile
+    .c_font_file("hex_font.mem"),
+    .c_color_bits(c_color_bits)
+  )
+  hex_decoder_v_inst
+  (
+    .clk(clk_hdmi),
+    .data(r_display),
+    .x(x[7:1]),
+    .y(y[7:1]),
+    .color(color)
+  );
+
+  wire next_pixel;
+  reg [c_color_bits-1:0] r_color;
+  wire w_oled_csn;
+
+  always @(posedge clk_hdmi)
+    if(next_pixel) r_color <= color;
+
+  lcd_video #(
+    .c_clk_mhz(125),
+    .c_init_file("st7789_linit_xflip.mem"),
+    .c_clk_phase(0),
+    .c_clk_polarity(1),
+    .c_init_size(38)
+  ) lcd_video_inst (
+    .clk(clk_hdmi),
+    .reset(r_btn_joy[5]),
+    .x(x),
+    .y(y),
+    .next_pixel(next_pixel),
+    .color(r_color),
+    .spi_clk(oled_clk),
+    .spi_mosi(oled_mosi),
+    .spi_dc(oled_dc),
+    .spi_resn(oled_resn),
+    .spi_csn(w_oled_csn)
+  );
+
+  //assign oled_csn = w_oled_csn; // 8-pin ST7789: oled_csn is connected to CSn
+  assign oled_csn = 1; // 7-pin ST7789: oled_csn is connected to BLK (backlight enable pin)
+  end
+  endgenerate
+```
+
+### LED diagnostics
+
+And then the optional LED diagnostics using Digilent 8 LED Pmods:
+
+```verilog
+  wire next_pixel;
+  reg [c_color_bits-1:0] r_color;
+  wire w_oled_csn;
+
+  always @(posedge clk_hdmi)
+    if(next_pixel) r_color <= color;
+
+  lcd_video #(
+    .c_clk_mhz(125),
+    .c_init_file("st7789_linit_xflip.mem"),
+    .c_clk_phase(0),
+    .c_clk_polarity(1),
+    .c_init_size(38)
+  ) lcd_video_inst (
+    .clk(clk_hdmi),
+    .reset(r_btn_joy[5]),
+    .x(x),
+    .y(y),
+    .next_pixel(next_pixel),
+    .color(r_color),
+    .spi_clk(oled_clk),
+    .spi_mosi(oled_mosi),
+    .spi_dc(oled_dc),
+    .spi_resn(oled_resn),
+    .spi_csn(w_oled_csn)
+  );
+
+  //assign oled_csn = w_oled_csn; // 8-pin ST7789: oled_csn is connected to CSn
+  assign oled_csn = 1; // 7-pin ST7789: oled_csn is connected to BLK (backlight enable pin)
+  end
+  endgenerate
+```
+
+## LED status signals
+
+Lastly, the built-in LEDs are used for various status signals:
+
+```verilog
+  // ===============================================================
+  // Leds
+  // ===============================================================
+  assign led = {tdata_cs, tctrl_cs, irq, reset, spi_ram_rd, spi_ram_wr, spi_load};
+
+endmodule
+```
 
 

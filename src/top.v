@@ -358,7 +358,9 @@ module top #(
     .o_hsync(osd_vga_hsync), .o_vsync(osd_vga_vsync), .o_blank(osd_vga_blank)
   );
 
+  // ===============================================================
   // Convert VGA to HDMI
+  // ===============================================================
   HDMI_out vga2dvid (
     .pixclk(clk_vga),
     .pixclk_x5(clk_hdmi),
@@ -396,9 +398,7 @@ module top #(
     end
   endgenerate
 
-  // ===============================================================
   // 6850 ACIA (uart)
-  // ===============================================================
   reg baudclk; // 16 * 9600 = 153600 = 25Mhz/162
   reg [7:0] baudctr = 0;
   reg [3:0] e_counter = 0;
