@@ -254,7 +254,11 @@ module top #(
 
   generate
     if (c_sdram == 0) begin
-      dpram #( .MEM_INIT_FILE("../roms/boot.mem")) ram48 (
+      dpram #( 
+        .MEM_INIT_FILE("../roms/boot.mem"),
+        .DATA_WIDTH(8),
+        .DEPTH(64 * 1024)
+      ) ram64 (
         .clk_a(clk_cpu),
         .we_a(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
         .addr_a(spi_load ? spi_ram_addr[15:0] : cpu_address),

@@ -1,5 +1,4 @@
-// This is rom with an extra write port that can be used to initialize it
-module dprom #(
+module rom #(
   parameter MEM_INIT_FILE = "",
   parameter DATA_WIDTH = 8,
   parameter DEPTH = 16384,
@@ -7,10 +6,7 @@ module dprom #(
 ) ( 
   input                       clk,
   input [ADDRESS_WIDTH-1:0]   addr,
-  output reg [DATA_WIDTH-1:0] dout,
-  input                       we_b,
-  input [ADDRESS_WIDTH-1:0]   addr_b,
-  input [DATA_WIDTH-1:0]      din_b
+  output reg [DATA_WIDTH-1:0] dout
 );
 
   reg [DATA_WIDTH:0] rom [0:DEPTH-1];
@@ -21,11 +17,6 @@ module dprom #(
    
   always @(posedge clk) begin
     dout <= rom[addr];
-  end
-
-  always @(posedge clk) begin
-    if (we_b)
-      rom[addr_b] <= din_b;
   end
 
 endmodule

@@ -1,24 +1,26 @@
-module dpram (
-  // Port A
-  input            clk_a,
-  input            we_a,
-  input [15:0]     addr_a,
-  input [7:0]      din_a,
-  output reg [7:0] dout_a,
-  // Port B
-  input            clk_b,
-  input [15:0]     addr_b,
-  output reg [7:0] dout_b
+// This is BRAM with an extra read port, typically used for video memory
+module dpram #(
+  parameter MEM_INIT_FILE = "",
+  parameter DATA_WIDTH = 8,
+  parameter DEPTH = 16384,
+  parameter ADDRESS_WIDTH = $clog2(DEPTH)
+) (
+  input                       clk_a,
+  input                       we_a,
+  input [ADDRESS_WIDTH-1:0]   addr_a,
+  input [DATA_WIDTH-1:0]      din_a,
+  output reg [DATA_WIDTH-1:0] dout_a,
+  input                       clk_b,
+  input [ADDRESS_WIDTH-1:0]   addr_b,
+  output reg [DATA_WIDTH-1:0] dout_b
 );
 
-  parameter MEM_INIT_FILE = "";
-   
-  reg [7:0] ram [0:65535];
+  reg [DATA_WIDTH-1:0] ram[0:DEPTH-1];
 
   initial
     if (MEM_INIT_FILE != "")
       $readmemh(MEM_INIT_FILE, ram);
-   
+
   always @(posedge clk_a) begin
     if (we_a)
       ram[addr_a] <= din_a;
