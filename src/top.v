@@ -3,7 +3,7 @@ module top #(
   parameter c_vga_out      = 0,  // 0; Just HDMI, 1: VGA and HDMI
   parameter c_acia_serial  = 1,  // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial = 0,  // 0: disabled, 1: ESP32 serial (micropython console)
-  parameter c_sdram        = 0,  // SDRAM or BRAM 
+  parameter c_sdram        = 1,  // SDRAM or BRAM 
   parameter c_keyboard     = 0,  // Include keyboard support
   parameter c_diag         = 1,  // 0: No led diagnostcs, 1: led diagnostics 
   parameter c_speed        = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
@@ -271,7 +271,7 @@ module top #(
     end else begin
       wire sdram_d_wr;
       wire [15:0] sdram_d_in, sdram_d_out;
-      wire [23:0] sdram_address = cpu_address;
+      wire [23:0] sdram_address = {8'b0, cpu_address};
 
       assign sdram_d = sdram_d_wr ? sdram_d_out : 16'hzzzz;
       assign sdram_d_in = sdram_d;
@@ -292,13 +292,13 @@ module top #(
        .init(!clk_sdram_locked),
        .we_out(sdram_d_wr),
        // cpu/chipset interface
-       .weA(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
+       .weA(spi_load ? 1'b0 : n_ram_cs == 1'b0 && n_memwr == 1'b0),
        .addrA(sdram_address),
        .oeA(cpu_clk_enable),
        .dinA(cpu_data_out),
        .doutA(ram_out),
        // SPI interface
-       .weB(spi_ram_wr && spi_ram_addr[31:24] == 8'h00),
+       .weB(spi_load ? spi_ram_wr && spi_ram_addr[31:24] == 8'h00 : 1'b0),
        .addrB(spi_ram_addr[23:0]),
        .dinB(spi_ram_di),
        .oeB(0),
