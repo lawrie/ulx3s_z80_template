@@ -671,37 +671,24 @@ And then the optional hex diagnostics on an ST7789 display:
 And then the optional LED diagnostics using Digilent 8 LED Pmods:
 
 ```verilog
-  wire next_pixel;
-  reg [c_color_bits-1:0] r_color;
-  wire w_oled_csn;
+  // ===============================================================
+  // Led diagnostics
+  // ===============================================================
+  reg [15:0] diag16;
 
-  always @(posedge clk_hdmi)
-    if(next_pixel) r_color <= color;
-
-  lcd_video #(
-    .c_clk_mhz(125),
-    .c_init_file("st7789_linit_xflip.mem"),
-    .c_clk_phase(0),
-    .c_clk_polarity(1),
-    .c_init_size(38)
-  ) lcd_video_inst (
-    .clk(clk_hdmi),
-    .reset(r_btn_joy[5]),
-    .x(x),
-    .y(y),
-    .next_pixel(next_pixel),
-    .color(r_color),
-    .spi_clk(oled_clk),
-    .spi_mosi(oled_mosi),
-    .spi_dc(oled_dc),
-    .spi_resn(oled_resn),
-    .spi_csn(w_oled_csn)
-  );
-
-  //assign oled_csn = w_oled_csn; // 8-pin ST7789: oled_csn is connected to CSn
-  assign oled_csn = 1; // 7-pin ST7789: oled_csn is connected to BLK (backlight enable pin)
-  end
+  generate
+    genvar i;
+    if (c_diag) begin
+      for(i = 0; i < 4; i = i+1) begin
+        assign gn[17-i] = diag16[8+i];
+        assign gp[17-i] = diag16[12+i];
+        assign gn[24-i] = diag16[i];
+        assign gp[24-i] = diag16[4+i];
+      end
+    end
   endgenerate
+
+  always @(posedge clk_cpu) diag16 <= ps2_key;
 ```
 
 ## LED status signals
