@@ -41,7 +41,7 @@ The options are:
 
 ## Ports
 
-Next come the module ports using the standard Ulx3s ulx3s_v20.lpf prin definitions:
+Next comes the module ports using the standard Ulx3s ulx3s_v20.lpf pin definitions:
 
 ```verilog
   input         clk_25mhz,
@@ -92,4 +92,102 @@ Next come the module ports using the standard Ulx3s ulx3s_v20.lpf prin definitio
   output [7:0]  led
 );
 ```
+## CPU signals
+
+Then the signals used by the CPU are declared:
+
+```
+  // ===============================================================
+  // CPU signals
+  // ===============================================================
+  wire          n_wr;
+  wire          n_rd;
+  wire          n_int;
+  wire          n_mreq;
+  wire          n_iorq;
+  wire          n_m1;
+
+  // Buses
+  wire [15:0]   cpu_address;
+  wire [7:0]    cpu_data_out;
+  wire [7:0]    cpu_data_in;
+  wire [15:0]   pc;
+
+  // Derived signals
+  wire n_iowr  = n_wr | n_iorq;
+  wire n_memwr = n_wr | n_mreq;
+  wire n_iord  = n_rd | n_iorq;
+  wire n_memrd = n_rd | n_mreq;
+
+  // Chip selects
+  wire          n_rom_cs;
+  wire          n_ram_cs;
+
+  wire          tdata_cs;
+  wire          tctrl_cs;
+
+  // Miscellaneous signals
+  wire [7:0]    acia_dout;
+  reg [6:0]     r_btn_joy;
+  reg [7:0]     r_cpu_control;
+  wire          spi_load = r_cpu_control[1];
+```
+
+The derived signals are for convenience to test for memory or I/O port reads or writes.
+
+The chip select signals are used to select memory and peripheral chips (such as the ACIA uart).
+
+## System clock generation
+
+Next comes the system clock generation, using emard's ecp5pll module:
+
+```verilog
+  // ===============================================================
+  // System Clock generation
+  // ===============================================================
+  wire clk_sdram_locked;
+  wire [3:0] clocks;
+  ecp5pll
+  #(
+      .in_hz( 25*1000000),
+    .out0_hz(125*1000000),
+    .out1_hz( 25*1000000),
+    .out2_hz(100*1000000),                // SDRAM core
+    .out3_hz(100*1000000), .out3_deg(180) // SDRAM chip 45-330:ok 0-30:not
+  )
+  ecp5pll_inst
+  (
+    .clk_i(clk_25mhz),
+    .clk_o(clocks),
+    .locked(clk_sdram_locked)
+  );
+  wire clk_hdmi  = clocks[0];
+  wire clk_vga   = clocks[1];
+  wire clk_cpu  = clocks[1];
+  wire clk_sdram = clocks[2];
+  wire sdram_clk = clocks[3]; // phase shifted for chip
+```
+
+Clocks are defined for the cpu, vga and hdmi output, and for the SDRAM (if used).
+
+## CPU clock generation
+
+The speed of the cpu clock is then set, using a clock enable signal.
+
+```verilog
+  // ===============================================================
+  // CPU clock generation
+  // ===============================================================
+  reg [c_speed:0] cpu_clk_count;
+
+  always @(posedge clk_cpu) begin
+    cpu_clk_count <= cpu_clk_count + 1;
+  end
+
+  wire cpu_clk_enable = cpu_clk_count[c_speed];
+
+```
+
+## Reset generation
+
 

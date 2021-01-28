@@ -75,10 +75,10 @@ module top #(
   wire [15:0]   pc;
 
   // Derived signals
-  wire          n_memwr;
-  wire          n_memrd;
-  wire          n_iowr;
-  wire          n_iord;
+  wire n_iowr  = n_wr | n_iorq;
+  wire n_memwr = n_wr | n_mreq;
+  wire n_iord  = n_rd | n_iorq;
+  wire n_memrd = n_rd | n_mreq;
   
   // Chip selects
   wire          n_rom_cs;
@@ -141,14 +141,6 @@ module top #(
      if (!pwr_up_reset_n)
        pwr_up_reset_counter <= pwr_up_reset_counter + 1;
   end
-
-  // ===============================================================
-  // MEMORY READ/WRITE LOGIC
-  // ===============================================================
-  assign n_iowr = n_wr | n_iorq;
-  assign n_memwr = n_wr | n_mreq;
-  assign n_iord = n_rd | n_iorq;
-  assign n_memrd = n_rd | n_mreq;
 
   // ===============================================================
   // Chip selects
