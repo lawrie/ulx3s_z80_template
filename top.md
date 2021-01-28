@@ -468,7 +468,7 @@ By default there is a blank screen, which the OSD can overlay.
   );
 ```
 
-VGA utput via a Digilent Pmod is optional, but the VGA signal is always generated, so that it can be used for HDMI output.
+VGA output via a Digilent Pmod is optional, but the VGA signal is always generated, so that it can be used for HDMI output.
 
 ## OSD
 
