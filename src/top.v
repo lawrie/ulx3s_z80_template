@@ -3,7 +3,7 @@ module top #(
   parameter c_vga_out      = 0,  // 0; Just HDMI, 1: VGA and HDMI
   parameter c_acia_serial  = 1,  // 0: disabled, 1: ACIA serial
   parameter c_esp32_serial = 0,  // 0: disabled, 1: ESP32 serial (micropython console)
-  parameter c_sdram        = 1,  // SDRAM or BRAM 
+  parameter c_sdram        = 0,  // SDRAM or BRAM 
   parameter c_keyboard     = 0,  // Include keyboard support
   parameter c_diag         = 1,  // 0: No led diagnostcs, 1: led diagnostics 
   parameter c_speed        = 1,  // CPU speed = 25 / 2 ** (c_speed + 1) MHz
@@ -446,7 +446,7 @@ module top #(
   reg [127:0] r_display;
   // HEX decoder does printf("%16X\n%16X\n", r_display[63:0], r_display[127:64]);
   always @(posedge clk_cpu)
-    r_display = {cpu_data_in, cpu_data_out, cpu_address, pc};
+    r_display <= {cpu_data_in, cpu_data_out, cpu_address, pc};
 
   parameter c_color_bits = 16;
   wire [7:0] x;
